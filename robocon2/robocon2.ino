@@ -188,31 +188,33 @@ Receive_Packet serial_receive2() {
     serial_receive();
   }
 }
-}
 
 Transmit_Packet receive_to_transmit2(Receive_Packet r_packet) {
   Transmit_Packet t_packet;
   switch (r_packet.signaltype) {
-    case 0:
-      t_packet.data[0] = 60;
+    case 10:
+      t_packet.data[0] = (digitalRead(right_alert) == HIGH)? 10:11;
       break;
-    case 1:
-      t_packet.data[0] = 60;
+    case 20:
+      t_packet.data[0] = (digitalRead(left_alert) == HIGH)? 20:21;
       break;
-    case 2:
-      t_packet.data[0] = (digitalRead(right_alert) == HIGH)? 0:10;
+    case 30:
+      t_packet.data[0] = (digitalRead(right_alert) == HIGH | digitalRead(left_alert) == HIGH)? 30:31;
       break;
-    case 3:
-      t_packet.data[0] = (digitalRead(left_alert) == HIGH)? 20:30;
-      break;
-    case 4:
+    case 40:
       t_packet.data[0] = 40;
       break;
-    case 5:
+    case 50:
       t_packet.data[0] = 50;
       break;
-    case 6:
+    case 60:
+      t_packet.data[0] = 60;
+      break;
+    case 70:
       t_packet.data[0] = 70;
+      break;
+    case 80:
+      t_packet.data[0] = 80;
       break;
     default:
       break;
@@ -228,27 +230,28 @@ Transmit_Packet work(Transmit_Packet t_packet1){
   t_packet2.signaltype = t_packet1.signaltype;
   t_packet2.rand_id = t_packet1.rand_id;
   switch (t_packet1.signaltype) {
-    case 0:
-      servo()
-      break;
     case 10:
-      servo()
+      step();
       break;
     case 20:
-      step()
+      step();
       break;
     case 30:
-      step()
+      step();
       break;
     case 40:
-      step()
+      step();
       break;
     case 50:
       IMU.readSensor();
       break;
     case 60:
+      servo();
       break;
     case 70:
+      servo();
+      break;
+    case 80:
       IMU.readSensor();
       break;
     default:
@@ -285,29 +288,28 @@ void serial_transmit2(Transmit_Packet t_packet){
     t_packet.data[i] = 0;
   }
   switch (t_packet.signaltype) {
-    case 0:
-      t_packet.data[0] = (digitalRead(right_alert) == HIGH)? (float)1:(float)0;
-      break;
     case 10:
-      t_packet.data[0] = (digitalRead(right_feedback) == HIGH)? (float)1:(float)0;
+      t_packet.data[0] = (digitalRead(right_alert) == HIGH)? (float)1:(float)0;
       break;
     case 20:
       t_packet.data[0] = (digitalRead(left_alert) == HIGH)? (float)1:(float)0;
       break;
     case 30:
-      t_packet.data[0] = (digitalRead(left_feedback) == HIGH)? (float)1:(float)0;
+      t_packet.data[0] = (digitalRead(left_alert) == HIGH)? (float)1:(float)0;
       break;
     case 40:
       IMU.readSensor();
       t_packet.data[0] = get_dist(IMU.getTemperature_C());
       break;
     case 50:
+      break;
+    case 60:
       bright_thresh = EEPROM.read(0);
       t_packet.data[0] = (analogRead(line_tracer) <= bright_thresh)? (float)1:(float)0;
       break;
-    case 60:
-      break;
     case 70:
+      break;
+    case 80:
       IMU.readSensor();
       t_packet.data[0] = IMU.getAccelX_mss();
       t_packet.data[1] = IMU.getAccelY_mss();
