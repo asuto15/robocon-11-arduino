@@ -18,9 +18,10 @@ const int bright_thresh = 500;
 #define sv_upper
 #define sv_lower
 #define rot_angle
+#define check
+#define check1
 
 const int pulse_width = 1000;//us
-
 
 byte receive_data[receive_data_size];
 byte transmit_data[transmit_data_size];
@@ -51,34 +52,17 @@ enum dir {
 enum move {
   right,
   left,
-  lock
+  both
 };
 
 void setup() {
   // put your setup code here, to run once:-
   pinMode(check,INPUT)
-  pinMode(check,INPUT)
-  pinMode(check,INPUT)
+  pinMode(check1,INPUT)
 
   if(digitalRead(check) == HIGH) {
-    Serial.println("Line tracer Setup Start");
-    Serial.println("pls connect check1 pin and VCC to get the brightness on the line")
-    while(digitalRead(check1) == LOW){
-      delay(1000);
-    }
-    int onLine = analogRead(line_tracer);
-    Serial.println("OK. pls connect check1 pin and GND to get the brightness on the load")
-    while(digitalRead(check1)) == HIGH) {
-      delay(1000);
-    }
-    int onLoad = analogRead(line_tracer);
-    int bright_thresh = (onLine + onLoad) /2;
-    EEPROM.write(0,bright_thresh);
-    Serial.println("Setup Complete");
-    Serial.print("Brightness threshold : ");
-    Serial.println(bright_thresh);
+    LTsetup(check1);
   }
-
 
   Wire.begin();
   Serial.begin(9600);
@@ -109,10 +93,30 @@ void setup() {
   
 }
 
+void LTsetup(int check1) {
+  Serial.println("Line tracer Setup Start");
+  Serial.println("pls connect check1 pin and VCC to get the brightness on the line")
+  while(digitalRead(check1) == LOW){
+    delay(1000);
+  }
+  int onLine = analogRead(line_tracer);
+  Serial.println("OK. pls connect check1 pin and GND to get the brightness on the load")
+  while(digitalRead(check1)) == HIGH) {
+    delay(1000);
+  }
+  int onLoad = analogRead(line_tracer);
+  int bright_thresh = (onLine + onLoad) /2;
+  EEPROM.write(0,bright_thresh);
+  Serial.println("Setup Complete");
+  Serial.print("Brightness threshold : ");
+  Serial.println(bright_thresh);
+}
+
 void loop() {
   //attachInterrupt(0,sw, RISING);
-  Receive_Packet serial_receive2();
-  receive_to_transmit(add);
+  Receive_Packet r_packet = serial_receive2();
+  Transmit_Packet t_packet = receive_to_transmit(add);
+
 }
 
 byte *serial_receive() {
