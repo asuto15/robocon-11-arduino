@@ -40,18 +40,6 @@ typedef struct {
   float data[9];
 } Transmit_Packet;
 
-enum dir {
-  right,
-  left,
-  lock
-};
-
-enum move {
-  right,
-  left,
-  both
-};
-
 Transmit_Packet receive_to_transmit2(Receive_Packet r_packet) {
 }
 
