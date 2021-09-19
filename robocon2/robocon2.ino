@@ -125,41 +125,6 @@ void loop() {
 
 }
 
-byte *serial_receive() {
-  byte receive_data[receive_data_size];
-  byte *ret = &receive_data[0];
-  if (Serial.available() == receive_data_size) {
-    Serial.println("NO!");
-    noInterrupts();
-      //static int data_size = Serial.available();      
-      //Serial.println(data_size);
-      for (int n = 0; n < receive_data_size; n++){
-        receive_data[n] = Serial.read();
-        //Serial.print((char)receive_data[n]);
-      }
-      //Serial.println("");
-    interrupts();
-      //data_size -= max_data_size;
-      Serial.println("OK!");
-      return ret;  
-  } else if (Serial.available() > 0){
-    Serial.println("Invalid data size");
-    noInterrupts();
-      int trush = 0;
-      int len = Serial.available();
-      for (int n = 0; n < len; n++){
-        trush = Serial.read();
-        Serial.print(trush);
-      }
-      Serial.println("");
-    interrupts();
-      //return ret;
-  } else {
-    delay(100);
-    serial_receive();
-  }
-}
-
 Receive_Packet serial_receive2() {
   Receive_Packet r_packet;
   byte receive_data[receive_data_size];
@@ -336,7 +301,58 @@ void serial_transmit2(Transmit_Packet t_packet){
       Serial.print(t_packet.data[i]);
 }
 
+int get_temp() {
+  int analogIn = analogRead(temp_pin);
+  int sensorVout = map(analogIn, 0, 1023, 0, 4600);
+  int temperature = map(sensorVout, 350, 1450, -25, 80);
+  return temperature;//℃
+}
 
+double get_dist(float temperature) {
+  float velocity = 331.5 + 0.61 * (float)temperature;//m/s
+  int pulse_time = pulseIn(pulse_pin, HIGH, 20000);//us
+  float distance = velocity * 1000 * (pulse_time / 2) / 1000000; //mm 
+  return distance;
+}
+
+/*
+byte *serial_receive() {
+  byte receive_data[receive_data_size];
+  byte *ret = &receive_data[0];
+  if (Serial.available() == receive_data_size) {
+    Serial.println("NO!");
+    noInterrupts();
+      //static int data_size = Serial.available();      
+      //Serial.println(data_size);
+      for (int n = 0; n < receive_data_size; n++){
+        receive_data[n] = Serial.read();
+        //Serial.print((char)receive_data[n]);
+      }
+      //Serial.println("");
+    interrupts();
+      //data_size -= max_data_size;
+      Serial.println("OK!");
+      return ret;  
+  } else if (Serial.available() > 0){
+    Serial.println("Invalid data size");
+    noInterrupts();
+      int trush = 0;
+      int len = Serial.available();
+      for (int n = 0; n < len; n++){
+        trush = Serial.read();
+        Serial.print(trush);
+      }
+      Serial.println("");
+    interrupts();
+      //return ret;
+  } else {
+    delay(100);
+    serial_receive();
+  }
+}
+*/
+
+/*
 Receive_Packet decode_receive(int *add) {
   Receive_Packet r_packet;
   int len_data = typeof(add)/typeof(add[0]);
@@ -352,7 +368,9 @@ Receive_Packet decode_receive(int *add) {
   } else {
     return 0;
   }
+*/
 
+/*
 Transmit_Packet decode_transmit(int *add) {
   Transmit_Packet t_packet;
   int len_data = typeof(add)/typeof(add[0]);
@@ -366,8 +384,9 @@ Transmit_Packet decode_transmit(int *add) {
     return 0;
   }
 }
+*/
 
-
+/*
 void serial_transmit(byte *add) {
   byte datatype = add[0];
   long rand_id = add[1] * pow(2,24) + add[2] * pow(2,16) + add[3] * pow(2,8) + add[4];
@@ -418,7 +437,7 @@ void serial_transmit(byte *add) {
     }
   }
 }
-
+*/
 
 
 /*
@@ -439,20 +458,6 @@ void i2c_read(int address, int reg_id, long data)
   }
 }
 */
-
-int get_temp() {
-  int analogIn = analogRead(temp_pin);
-  int sensorVout = map(analogIn, 0, 1023, 0, 4600);
-  int temperature = map(sensorVout, 350, 1450, -25, 80);
-  return temperature;//℃
-}
-
-double get_dist(float temperature) {
-  float velocity = 331.5 + 0.61 * (float)temperature;//m/s
-  int pulse_time = pulseIn(pulse_pin, HIGH, 20000);//us
-  float distance = velocity * 1000 * (pulse_time / 2) / 1000000; //mm 
-  return distance;
-}
 
 /*
 void servo() {
