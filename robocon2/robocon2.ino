@@ -108,26 +108,26 @@ void LTsetup(int check1) {
 
 void loop() {
   //attachInterrupt(0,sw, RISING);
-  Receive_Packet r_packet = serial_receive2();
-  Transmit_Packet t_packet = receive_to_transmit(add);
+  Receive_Packet r_packet = serial_receive();
+  Transmit_Packet t_packet = work(r_packet);
 
 }
 
-Receive_Packet serial_receive2() {
+Receive_Packet serial_receive() {
   Receive_Packet r_packet;
   byte receive_data[receive_data_size];
   if (Serial.available() == receive_data_size) {
-    Serial.println("NO!");
+    Serial.println("Stop");
     noInterrupts();
       for (int n = 0; n < receive_data_size; n++){
         receive_data[n] = Serial.read();
       }
     interrupts();
-      Serial.println("OK!");
       r_packet.signaltype = receive_data[0];
       r_packet.rand_id = receive_data[1] * pow(2,24) + receive_data[2] * pow(2,16) + receive_data[3] * pow(2,8) + receive_data[4];
       r_packet.data[0] = receive_data[5];
       r_packet.data[1] = receive_data[6];
+      Serial.println(r_packet.rand_id);
       return r_packet;  
   } else if (Serial.available() > 0){
     Serial.println("Invalid data size");
@@ -136,7 +136,7 @@ Receive_Packet serial_receive2() {
       int len = Serial.available();
       for (int n = 0; n < len; n++){
         trush = Serial.read();
-        Serial.print(trush);
+        //Serial.print(trush);
       }
       Serial.println("");
     interrupts();
@@ -148,77 +148,55 @@ Receive_Packet serial_receive2() {
   }
 }
 
-Transmit_Packet receive_to_transmit2(Receive_Packet r_packet) {
+Transmit_Packet work(Receive_Packet r_packet){
   Transmit_Packet t_packet;
+  t_packet.signaltype = r_packet.signaltype;
+  t_packet.rand_id = r_packet.rand_id;
+  for (int i=0; i<2; i++) {
+    t_packet.data[i] = r_packet.data[i];
+  }
   switch (r_packet.signaltype) {
     case 10:
       t_packet.data[0] = (digitalRead(right_alert) == HIGH)? 10:11;
+      step();
       break;
     case 20:
       t_packet.data[0] = (digitalRead(left_alert) == HIGH)? 20:21;
+      step();
       break;
     case 30:
       t_packet.data[0] = (digitalRead(right_alert) == HIGH | digitalRead(left_alert) == HIGH)? 30:31;
+      step();
       break;
     case 40:
       t_packet.data[0] = 40;
+      step();
       break;
     case 50:
       t_packet.data[0] = 50;
+      IMU.readSensor();
       break;
     case 60:
       t_packet.data[0] = 60;
+      servo();
       break;
     case 70:
       t_packet.data[0] = 70;
+      servo();
       break;
     case 80:
       t_packet.data[0] = 80;
+      IMU.readSensor();
       break;
     default:
+      t_packet.signaltype = -1;
       break;
-  }
-  for (int i=0; i<2; i++) {
-    t_packet.data[i] = r_packetdata[i];
   }
   return t_packet;
 }
 
-Transmit_Packet work(Transmit_Packet t_packet1){
-  Transmit_Packet t_packet2;
-  t_packet2.signaltype = t_packet1.signaltype;
-  t_packet2.rand_id = t_packet1.rand_id;
-  switch (t_packet1.signaltype) {
-    case 10:
-      step();
-      break;
-    case 20:
-      step();
-      break;
-    case 30:
-      step();
-      break;
-    case 40:
-      step();
-      break;
-    case 50:
-      IMU.readSensor();
-      break;
-    case 60:
-      servo();
-      break;
-    case 70:
-      servo();
-      break;
-    case 80:
-      IMU.readSensor();
-      break;
-    default:
-      break;
-    }
-}
-
-void servo(int mode,float *data){
+void servo(int mode,int signal_type, float *data){
+  float angular_velocity = data[0];//deg/ms
   switch (mode) {
     case 0:
       digitalWrite(sv_upper, HIGH);
@@ -242,7 +220,7 @@ void step(){
 }
 
 
-void serial_transmit2(Transmit_Packet t_packet){
+void serial_transmit(Transmit_Packet t_packet){
   for (int i = 0; i < 9; i++) {
     t_packet.data[i] = 0;
   }
