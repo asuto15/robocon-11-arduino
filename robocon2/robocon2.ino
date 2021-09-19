@@ -55,6 +55,15 @@ enum move {
   both
 };
 
+Transmit_Packet receive_to_transmit2(Receive_Packet r_packet) {
+}
+
+Transmit_Packet work(Transmit_Packet t_packet1){
+}
+
+void serial_transmit2(Transmit_Packet t_packet){
+}
+
 void setup() {
   // put your setup code here, to run once:-
   pinMode(check,INPUT)
