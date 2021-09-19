@@ -20,25 +20,28 @@ const int transmit_data_size = 43;
 #define check
 #define check1
 
-byte receive_data[receive_data_size];
-byte transmit_data[transmit_data_size];
-float IMU_data[9] = {0,0,0,0,0,0,0,0,0};
 //MPU9250 IMU(Wire,0x68);
 int status;
 
-typedef struct {
+typedef struct r_packet_t Receive_Packet;
+struct r_packet_t{
+  int packet_id;
   int signaltype;
   long rand_id;
   byte rot_dir;
-  byte angle_time;
+  byte datatype;
   float data[2];
-} Receive_Packet;
+  Receive_Packet *next;
+};
 
-typedef struct {
+typedef struct t_packet_t Transmit_Packet;
+struct t_packet_t{
+  int packet_id;
   int signaltype;
   long rand_id;
   float data[9];
-} Transmit_Packet;
+  Transmit_Packet *next;
+};
 
 Transmit_Packet receive_to_transmit2(Receive_Packet r_packet) {
 }
@@ -138,7 +141,7 @@ Receive_Packet serial_receive() {
         trush = Serial.read();
         //Serial.print(trush);
       }
-      Serial.println("");
+      //Serial.println("");
     interrupts();
       r_packet.signaltype = -1;
       return r;
