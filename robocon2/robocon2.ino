@@ -3,7 +3,6 @@
 #include <MPU9250.h>
 const int receive_data_size = 25;
 const int transmit_data_size = 43;
-const int bright_thresh = 500;
 #define right_alert 3
 #define right_feedback 4
 #define left_alert 5
@@ -20,8 +19,6 @@ const int bright_thresh = 500;
 #define rot_angle
 #define check
 #define check1
-
-const int pulse_width = 1000;//us
 
 byte receive_data[receive_data_size];
 byte transmit_data[transmit_data_size];
