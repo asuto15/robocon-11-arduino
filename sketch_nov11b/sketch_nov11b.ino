@@ -1,10 +1,10 @@
 int count = 0;
 long previous = 0;
 long t1 = 33820;
-long t2 = 13500;
+long t2 = 10500;
 //long t1 = 200;
 //long t2 = 200;
-long t3 = 2665;
+long t3 = 2400; // 2670
 
 
 void setup() {
@@ -38,6 +38,9 @@ void loop() {
 
 void golong() {
   while (millis() - previous <= t1){
+    go();
+    go();
+    go();
     go();
   }
   previous = millis();
