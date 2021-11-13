@@ -1,6 +1,6 @@
 #include <Wire.h>
 #include <MPU9250.h>
-const int receive_data_size = 17;
+const int receive_data_size = 16;
 const int transmit_data_size = 42;
 #define right_alert 3
 #define right_feedback 4

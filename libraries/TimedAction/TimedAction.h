@@ -31,7 +31,7 @@
 #define TIMEDACTION_H
 
 // #include "WProgram.h"
-#include "Arduino.h"
+#include <Arduino.h>
 
 #define NO_PREDELAY 0
 
