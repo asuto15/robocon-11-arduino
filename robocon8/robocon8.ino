@@ -164,12 +164,16 @@ void receivePacket(){
     Serial.flush();
     //noInterrupts();
     byte received_data_size;
-    if (debug == 2) {
+    if (debug == 3) {
       for (int i=0; i<24; i++) {
         receive_data[i] = 0;
       }
     } else {
       received_data_size = byte(Serial.readBytes(receive_data,receive_data_size));
+      Serial.print(">Data");
+      for (int i=0; i<receive_data_size; i++){
+        Serial.print(receive_data[i]);
+      }
     }
 //    Serial.println(">read");
 //    Serial.flush();
