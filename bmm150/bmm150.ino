@@ -137,11 +137,13 @@ void loop() {
     char text_string[100];
     M5.update();    //Read the press state of the key.  读取按键的状态
     bmm150_read_mag_data(&dev);
+    dev.data.x = dev.data.x + 455;
+    dev.data.y = dev.data.y + 760;
+    dev.data.z = dev.data.z + 470;
     float head_dir = atan2(dev.data.x -  mag_offset.x, dev.data.y - mag_offset.y) * 180.0 / M_PI;
     Serial.printf("Magnetometer data, heading %.2f\n", head_dir);
     Serial.printf("MAG X : %.2f \t MAG Y : %.2f \t MAG Z : %.2f \n", dev.data.x, dev.data.y, dev.data.z);
     Serial.printf("MID X : %.2f \t MID Y : %.2f \t MID Z : %.2f \n", mag_offset.x, mag_offset.y, mag_offset.z);
-
     img.fillSprite(0);
     sprintf(text_string, "MAG X: %.2f", dev.data.x);
     img.drawString(text_string, 10, 20, 4); //draw string with padding.  绘制带有填充的字符串

@@ -396,6 +396,7 @@ void work(){
         M5.IMU.getAccelData(&accX,&accY,&accZ); //Stores the triaxial accelerometer.
         M5.IMU.getAhrsData(&pitch,&roll,&yaw);  //Stores the inertial sensor attitude.
         M5.IMU.getTempData(&temp);  //Stores the inertial sensor temperature to temp.
+        LCDprint();
         t_packet->data[0] = accX;
         t_packet->data[1] = accY;
         t_packet->data[2] = accZ;
