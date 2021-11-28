@@ -1,54 +1,93 @@
-#define M5STACK_MPU6886
+#define M5STACK_MYBUILD
 
-#include <M5Stack.h>
+//#if defined(ARDUINO_MYBUILD)
+//  #include <MPU9250.h>
+//  #define SERIAL_BUFFER_SIZE 256
+//  const int right_cw = 8;
+//  const int right_ccw = 9;
+//  const int right_lock = 6;
+//  const int left_cw = 10;
+//  const int left_ccw = 11;
+//  const int left_lock = 7;
+//  const int upper_sv = 4;
+//  const int lower_sv = 5;
+//  const int pulse_pin = 14;
+//  const int temp_pin = 15;
+//  const int line_tracer = 16;
+//  const int rot_angle = 17;
+//  const int check_pin = 12;
+//#endif
+
+#if defined(M5STACK_MYBUILD)
+  #include <M5Stack.h>
+  #include <SoftwareSerial.h>
+  #define M5STACK_MPU6886
+  const int right_cw = 16;
+  const int right_ccw = 17;
+  const int right_lock = 6;
+  const int left_cw = 2;
+  const int left_ccw = 5;
+  const int left_lock = 7;
+  const int upper_sv = 4;
+  const int lower_sv = 5;
+  const int pulse_pin = 14;
+  const int temp_pin = 15;
+  const int line_tracer = 12;
+  const int rot_angle = 13;
+  const int check_pin = 26;
+#endif
+
 #include <EEPROM.h>
-#include <MPU9250.h>
+#include <TimedAction.h>
 #include "PrivateStep.h"
 #include "PrivateServo.h"
 #include "struct_and_union.h"
+#include "Stepping.h"
 
-#define RAD_TO_DEG 57.324
-#define right_cw 4
-#define right_ccw 5
-#define right_lock 10
-#define left_cw 6
-#define left_ccw 7
-#define left_lock 11
-#define upper_sv 8
-#define lower_sv 9
-#define pulse_pin 14
-#define temp_pin 15
-#define line_tracer 16
-#define rot_angle 17
-#define check_pin 12
 
 const int debug = 0;
 const int receive_data_size = 24;
 const int transmit_data_size = 42;
 int current_unique_id = 0;
+
+#if defined(ARDUINO_MYBUILD)
 MPU9250 IMU(Wire,0x68);
+#endif
+int r_erasable = 0;
+int t_erasable = 0;
 int status;
 PrivateServo servo = PrivateServo();
-//PrivateStep Stepping = PrivateStep();
+PrivateStep Stepping2 = PrivateStep();
 Stepping Step = Stepping();
-servo.setup(upper_sv, float(90), lower_sv, float(90));
-Step.setup(right_cw, right_ccw, right_lock, left_cw, left_ccw, left_lock);
-  
+
+#if defined(ARDUINO_MYBUILD)
+  TimedAction getPacket = TimedAction(1,receivePacket);
+  TimedAction takeAction = TimedAction(1,work);
+#endif
+
 void setup() {
   // put your setup code here, to run once:-
+#if defined(M5STACK_MYBUILD)
+  M5.begin();
+#endif
+  Serialsetup();
   pinAssign();
   LTsetup();
-  Serialsetup();
-  IMUsetup();
-  M5setup();
-  xTaskCreatePinnedToCore(task0, "Task0", 4096, NULL, 1, NULL, 0);
-  xTaskCreatePinnedToCore(task1, "Task1", 4096, NULL, 1, NULL, 1);
+//  IMUcheck();
+//  IMUsetup();
+  servo.setup(upper_sv, float(90), lower_sv, float(90));
+  Step.setup(right_cw, left_cw, right_ccw, left_ccw, right_lock, left_lock);
+  #if defined(M5STACK_MYBUILD)
+    xTaskCreatePinnedToCore(task0, "Task0", 4096, NULL, 1, NULL, 0);
+    xTaskCreatePinnedToCore(task1, "Task1", 4096, NULL, 1, NULL, 1);
+  #endif
 }
 
+#if defined(M5STACK_MYBUILD)
 void task0(void* arg) {
   while (1) {
     long now = millis();
-    if (millis() - now >= 10) {
+    if (millis() - now >= 100) {
       receivePacket();
     }
   }
@@ -57,14 +96,20 @@ void task0(void* arg) {
 void task1(void* arg) {
   while (1) {
     long now = millis();
-    if (millis() - now >= 10) {
+    if (millis() - now >= 100) {
       work();
     }
   }
 }
+#endif
 
 void Serialsetup() {
+#if defined(ARDUINO_MYBUILD)
   Serial.begin(9600);
+#endif
+#if defined(M5STACK_MYBUILD)
+  Serial.begin(115200);
+#endif
   while(!Serial) {}
   Serial.println("Transmission Start");
   Serial.flush();
@@ -90,24 +135,27 @@ void pinAssign() {
   pinMode(check_pin,INPUT);
 }
 
-void IMUsetup() {
-  status = IMU.begin();
-  if (status > 0) {
-    Serial.println(">IMU initialization unsuccessful");
-    Serial.flush();
-    Serial.println(">Check IMU wiring or try cycling power");
-    Serial.flush();
-    Serial.print(">Status: ");
-    Serial.flush();
-    Serial.println(status);
-    Serial.flush();
-    while(1) {}
-  }
-  IMU.setAccelRange(MPU9250::ACCEL_RANGE_8G);
-  IMU.setGyroRange(MPU9250::GYRO_RANGE_500DPS);
-  IMU.setDlpfBandwidth(MPU9250::DLPF_BANDWIDTH_20HZ);
-  IMU.setSrd(19);
-}
+//void IMUcheck() {
+//  status = IMU.begin();
+//  if (status > 0) {
+//    Serial.println(">IMU initialization unsuccessful");
+//    Serial.flush();
+//    Serial.println(">Check IMU wiring or try cycling power");
+//    Serial.flush();
+//    Serial.print(">Status: ");
+//    Serial.flush();
+//    Serial.println(status);
+//    Serial.flush();
+//    while(1) {}
+//  }
+//}
+//
+//void IMUsetup(){
+//  IMU.setAccelRange(MPU9250::ACCEL_RANGE_8G);
+//  IMU.setGyroRange(MPU9250::GYRO_RANGE_500DPS);
+//  IMU.setDlpfBandwidth(MPU9250::DLPF_BANDWIDTH_20HZ);
+//  IMU.setSrd(19);
+//}
 
 void LTsetup() {
   if(digitalRead(check_pin) == HIGH) {
@@ -116,14 +164,14 @@ void LTsetup() {
     Serial.println(">pls connect check pin and GND to get the brightness on the line");
     Serial.flush();
     while(digitalRead(check_pin) == HIGH){
-        delay(100);
+      delay(100);
     }
     delay(1000);
     int onLine = analogRead(line_tracer);
     Serial.println(">OK. pls connect check pin and VCC to get the brightness on the load");
     Serial.flush();
     while(digitalRead(check_pin) == LOW) {
-        delay(100);
+      delay(100);
     }
     delay(1000);
     int onLoad = analogRead(line_tracer);
@@ -138,20 +186,37 @@ void LTsetup() {
   }
 }
 
-void M5setup() {
-  M5.begin();
-  M5.Power.begin();
-  M5.IMU.Init();
-}
-
 void loop() {
+#if defined(ARDUINO_MYBUILD)
+  getPacket.check();
+  takeAction.check();
+#endif
+#if defined(M5STACK_MYBUILD)
+  delay(1000);
+#endif
 }
 
 Transmit_Packet *t_head;
+Transmit_Packet *t_packet;
+Transmit_Packet *t_tail;
 Receive_Packet *r_head;
-
+Receive_Packet *r_packet;
+Receive_Packet *r_current;
+Receive_Packet *r_tail;
+Receive_Packet *buf;
+r_head = NULL;
+r_current = NULL;
 
 void receivePacket(){
+  while (r_erasable > 0){
+    free(r_head);
+    r_head = buf;
+    r_erasable--;
+  }
+  if (t_erasable == 0){
+    free(t_packet);
+    t_erasable = false;
+  }
   if (Serial.available() > 0) {
     Receive_Packet *r_packet;
     if ((r_packet = (Receive_Packet *) malloc(sizeof(Receive_Packet))) == NULL) {
@@ -159,21 +224,27 @@ void receivePacket(){
       Serial.flush();
       return;
     }
+    if (debug) {
+      Serial.print(">rs : ");
+      Serial.flush();
+      Serial.println(micros());
+      Serial.flush();  
+    }
     byte receive_data[receive_data_size];
-    Serial.println(">Received");
-    Serial.flush();
     //noInterrupts();
     byte received_data_size;
-    if (debug == 3) {
+    if (debug == 2) {
       for (int i=0; i<24; i++) {
         receive_data[i] = 0;
       }
     } else {
       received_data_size = byte(Serial.readBytes(receive_data,receive_data_size));
-      Serial.print(">Data");
-      for (int i=0; i<receive_data_size; i++){
-        Serial.print(receive_data[i]);
-      }
+//      Serial.print(">Data");
+//      for (int i=0; i<receive_data_size; i++){
+//        Serial.print(":");
+//        Serial.print(receive_data[i]);
+//      }      
+//      Serial.println("");
     }
 //    Serial.println(">read");
 //    Serial.flush();
@@ -208,7 +279,7 @@ void receivePacket(){
     r_packet->rot_dir = receive_data[6];
     r_packet->datatype = receive_data[7];
     for (int i = 0; i < 4; i++){
-      r_packet->data[i] = ((receive_data[4*i+8] << 24)+(receive_data[4*i+9] << 16)+(receive_data[4*i+10] << 8)+(receive_data[4*i+11]));
+      r_packet->data[i] = *(float *)(receive_data+4*i+8);
     }
     if (r_packet->unique_id != current_unique_id) { //if (r_packet->unique_id != 0x00000000) {
       if (debug) {
@@ -216,38 +287,6 @@ void receivePacket(){
         Serial.flush();
         Serial.print(r_packet->unique_id);
         Serial.flush();
-//        for (int i=0; i<receive_data_size; i++) {
-//          Serial.print(receive_data[i]);
-//          Serial.write(0x2E);
-//        }
-//        Serial.print((byte)(r_packet->signaltype >> 8) & 0xFF);
-//        Serial.write(0x3A);
-//        Serial.print((byte)(r_packet->signaltype & 0xFF));
-//        Serial.write(0x3A);
-//        Serial.print((byte)(r_packet->unique_id >> 24) & 0xFF);
-//        Serial.write(0x3A);
-//        Serial.print((byte)(r_packet->unique_id >> 16) & 0xFF);
-//        Serial.write(0x3A);
-//        Serial.print((byte)(r_packet->unique_id >> 8) & 0xFF);
-//        Serial.write(0x3A);
-//        Serial.print((byte)(r_packet->unique_id & 0xFF));
-//        Serial.write(0x3A);
-//        for (int i=0; i<4; i++) {
-//          Serial.print((byte)((long)r_packet->data[i] >> 24) & 0xFF);
-//          Serial.write(0x3A);
-//          Serial.print((byte)((long)r_packet->data[i] >> 16) & 0xFF);
-//          Serial.write(0x3A);
-//          Serial.print((byte)((long)r_packet->data[i] >> 8) & 0xFF);
-//          Serial.write(0x3A);
-//          Serial.print((byte)((long)r_packet->data[i] & 0xFF));
-//          Serial.write(0x3A);
-//        }
-//        Serial.write(0x3D);
-//        for (int i = 0; i < receive_data_size; i++) {
-//          receive_data[i] = byteSwap(receive_data[i]);
-//          Serial.write(receive_data[i]);
-//          Serial.flush();
-//        }
       }
       free(r_packet);
       return;
@@ -266,7 +305,7 @@ void receivePacket(){
     Serial.write((byte)(r_packet->unique_id & 0xFF));
     Serial.flush();
     Serial.println("");
-    Receive_Packet *r_tail;
+    Serial.flush();
     if (r_head == NULL) {
       r_head = r_packet;
     } else {
@@ -276,6 +315,12 @@ void receivePacket(){
       }
       r_tail->next = r_packet;
     }
+    if (debug) {
+      Serial.print(">re : ");
+      Serial.flush();
+      Serial.println(micros());
+      Serial.flush();
+    }
     return;
 
   } else if (Serial.available() == 0){
@@ -283,99 +328,188 @@ void receivePacket(){
     return;
 
   } else {
-    
+    return;
   }
 }
 
 void work(){
+  if (r_erasable == true) {
+    return;
+  }
   if (r_head == NULL) {
     return;
   } else {
-    int signaltype = r_head->signaltype;
-    int datatype = r_head->datatype;
-    int rot_dir = r_head->rot_dir;
+    if (r_current == NULL){
+      r_current = r_head;
+    } else {
+      r_current = r_current->next;
+    }
+    Transmit_Packet *t_packet;
+    if ((t_packet = (Transmit_Packet *) malloc(sizeof(Transmit_Packet))) == NULL) {
+        Serial.println(">malloc error with transmit_packet");
+        Serial.flush();
+        return;
+    }
+    if (debug) {
+      Serial.print(">ws : ");
+      Serial.flush();
+      Serial.println(micros());
+      Serial.flush();
+    }
+    t_packet->signaltype = r_current->signaltype;
+    t_packet->unique_id = r_current->unique_id;
+    int signaltype = r_current->signaltype;
+    int datatype = r_current->datatype;
+    int rot_dir = r_current->rot_dir;
     float bright_thresh;
     float accX, accY, accZ;
     float gyroX, gyroY, gyroZ;
     float pitch, roll, yaw;
     float Temp;
-    switch (t_packet->signaltype) {
+    float data[4];
+
+    for (int i=0; i<4; i++) {
+      t_packet->data[i] = r_current->data[i];
+      data[i] = r_current->data[i];
+    }
+    for (int i=4; i<9; i++) {
+      t_packet->data[i] = 0;
+    }
+    buf = r_current->next;
+    r_erasable = true;
+    if (t_head == NULL) {
+      t_head = t_packet;
+    } else {
+      t_tail = t_head;
+      while (t_tail->next != NULL) {
+        t_tail = t_tail->next;
+      }
+      t_tail->next = t_packet;
+    }
+    switch (signaltype) {
       case 10:
-        switch(datatype) {
+      case 20:
+      case 30:
+      case 60:
+      case 70:
+        serialTransmit(t_packet);
+        break;
+    }
+    switch (signaltype) {
+      case 10:
+        switch(rot_dir) {
           case 0:
-            Stepping.setDegree(t_packet->data[0], t_packet->data[1]);
-            Stepping.work(t_packet->signaltype, rot_dir);
+            switch(datatype) {
+              case 0:
+                Step.right_f(data[0],data[1]);
+                break;
+              case 1:
+                Step.right_f(data[0],data[1]);
+                break;
+            }
             break;
           case 1:
-            Stepping.setTime(t_packet->data[0], t_packet->data[1]);
-            Stepping.work(t_packet->signaltype, rot_dir);
+            switch(datatype) {
+              case 0:
+                Step.right_b(data[0],data[1]);
+                break;
+              case 1:
+                Step.right_b(data[0],data[0]*data[1]);
+                break;
+            }
             break;
           case 2:
-            Stepping.rot_p1(rot_dir);
-            break;
-          case 3:
-            Stepping.stop_p1();
-          default:
+            Step.lock_right();
             break;
         }
         break;
       case 20:
-        switch(datatype) {
+        switch(rot_dir) {
           case 0:
-            Stepping.setDegree(t_packet->data[0], t_packet->data[1]);
-            Stepping.work(t_packet->signaltype, rot_dir);
+            switch(datatype) {
+              case 0:
+                Step.left_f(data[0],data[1]);
+                break;
+              case 1:
+                Step.left_f(data[0],data[0]*data[1]);
+                break;
+            }
             break;
           case 1:
-            Stepping.setTime(t_packet->data[0], t_packet->data[1]);
-            Stepping.work(t_packet->signaltype, rot_dir);
+            switch(datatype) {
+              case 0:
+                Step.left_b(data[0],data[1]);
+                break;
+              case 1:
+                Step.left_b(data[0],data[0]*data[1]);
+                break;
+            }
             break;
           case 2:
-            Stepping.rot_p2(rot_dir);
-            break;
-          case 3:
-            Stepping.stop_p2();
-          default:
+            Step.lock_left();
             break;
         }
         break;
       case 30:
-        Serial.print(">30willwork");
-        Serial.println(datatype);
-        switch(datatype) {
-          case 0:
-            Stepping.setDegrees(t_packet->data[0], t_packet->data[1], t_packet->data[2], t_packet->data[3]);
-            Stepping.work(t_packet->signaltype, rot_dir);
-            break;
-          case 1:
-            Stepping.setTimes(t_packet->data[0], t_packet->data[1], t_packet->data[2], t_packet->data[3]);
-            Stepping.work(t_packet->signaltype, rot_dir);
-            break;
+        switch(rot_dir) {
           case 2:
-            Serial.print(">rot");
-            Stepping.rot_p_both(rot_dir);
-            Serial.print(">rotted");
-            break;
+            Step.lock_both();
           case 3:
-            Stepping.stop_p_both();
-          default:
+            switch(datatype) {
+              case 0:
+                Step.move_forward(data[0], data[1]);
+                break;
+              case 1:
+                Step.move_forward(data[0], data[0]*data[1]);
+                break;
+            }
+            break;
+          case 4:
+            switch(datatype) {
+              case 0:
+                Step.move_backward(data[0], data[1]);
+                break;
+              case 1:
+                Step.move_backward(data[0], data[0]*data[1]);
+                break;
+            }
+            break;
+          case 5:
+            switch(datatype) {
+              case 0:
+                Step.move_right(data[0], data[1],data[2], data[3]);
+                break;
+              case 1:
+                Step.move_right(data[0], data[0]*data[1],data[2], data[3]);
+                break;
+            }
+            break;
+          case 6:
+            switch(datatype) {
+              case 0:
+                Step.move_left(data[0], data[1],data[2], data[3]);
+                break;
+              case 1:
+                Step.move_left(data[0], data[0]*data[1],data[2], data[3]);
+                break;
+            }
             break;
         }
-        Serial.println(">30worked");   
         break;
       case 40:
-        M5.IMU.getTempData(&Temp);
         if (status) {
-          t_packet->data[0] = get_dist(Temp);
+          t_packet->data[0] = get_dist(20);
         } else if (t_packet->data[0] > 10 & t_packet->data[0] < 40) {
           t_packet->data[0] = get_dist(t_packet->data[0]);
         } else {
           t_packet->data[0] = -1;
         }
+        serialTransmit(t_packet);
         break;
       case 50:
         bright_thresh = EEPROM.read(0);
         t_packet->data[0] = (digitalRead(line_tracer) >= bright_thresh)?1:0;
-        Serial.println(">50worked");
+        serialTransmit(t_packet);
         break;
       case 60:
         servo.setDegree1(t_packet->data[0]);
@@ -386,9 +520,6 @@ void work(){
         servo.work();
         break;
       case 80:
-        M5.IMU.getGyroData(&gyroX,&gyroY,&gyroZ);
-        M5.IMU.getAccelData(&accX,&accY,&accZ);
-        M5.IMU.getAhrsData(&pitch,&roll,&yaw);
         t_packet->data[0] = accX;
         t_packet->data[1] = accY;
         t_packet->data[2] = accZ;
@@ -398,29 +529,15 @@ void work(){
         t_packet->data[6] = pitch;
         t_packet->data[7] = roll;
         t_packet->data[8] = yaw;
+        serialTransmit(t_packet);
         break;
-      default:
-        break;
     }
-    Transmit_Packet *t_packet;
-    if ((t_packet = (Transmit_Packet *) malloc(sizeof(Transmit_Packet))) == NULL) {
-        Serial.println(">malloc error with transmit_packet");
-        Serial.flush();
-        return;
+    if (debug) {
+      Serial.print(">we : ");
+      Serial.flush();
+      Serial.println(micros());
+      Serial.flush();
     }
-    t_packet->signaltype = r_head->signaltype;
-    t_packet->unique_id = r_head->unique_id;
-    for (int i=0; i<4; i++) {
-      t_packet->data[i] = r_head->data[i];
-    }
-    for (int i=4; i<9; i++) {
-      t_packet->data[i] = 0;
-    }
-    Receive_Packet *buf = r_head->next;
-    free(r_head);
-    r_head = buf;
-    
-    serialTransmit(t_packet);
   }
 }
 
@@ -448,7 +565,9 @@ void serialTransmit(Transmit_Packet *t_packet){
       Serial.write((byte)((long)t_packet->data[i] & 0xFF));
       Serial.flush();
     }
-    free(t_packet);  
+    Serial.println("");
+    Serial.flush();
+    t_erasable = true;  
   }
 }
 
@@ -456,7 +575,7 @@ int get_temp(){
   int analogIn = analogRead(temp_pin);
   int sensorVout = map(analogIn, 0, 1023, 0, 4600);
   int temperature = map(sensorVout, 350, 1450, -25, 80);
-  return temperature;//℃
+  return temperature;//�?
 }
 
 float get_dist(float temperature){

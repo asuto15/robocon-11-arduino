@@ -88,7 +88,7 @@ void setup()
 
     Serial.printf("PAIN ID:%04X\r\n", arg->main_PANID);
 
-    //drawChatBubbles(" STC!!!!!");
+    //drawChatBubbles("Fuck STC!!!!!");
 
     /*
     xTaskCreate([](void *arg){

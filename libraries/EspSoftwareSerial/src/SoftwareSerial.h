@@ -122,8 +122,10 @@ public:
     uint32_t baudRate();
     /// Transmit control pin.
     void setTransmitEnablePin(int8_t txEnablePin);
-    /// Enable or disable interrupts during tx.
+    /// Enable (default) or disable interrupts during tx.
     void enableIntTx(bool on);
+    /// Enable (default) or disable internal rx GPIO pullup.
+    void enableRxGPIOPullup(bool on);
 
     bool overflow();
 
@@ -222,9 +224,11 @@ private:
     bool isValidTxGPIOpin(int8_t pin);
     // result is only defined for a valid Rx GPIO pin
     bool hasRxGPIOPullUp(int8_t pin);
+    // safely set the pin mode for the Rx GPIO pin
+    void setRxGPIOPullUp();
     /* check m_rxValid that calling is safe */
     void rxBits();
-    void rxBits(const uint32_t& isrCycle);
+    void rxBits(const uint32_t isrCycle);
 
     static void rxBitISR(SoftwareSerial* self);
     static void rxBitSyncISR(SoftwareSerial* self);
@@ -243,6 +247,7 @@ private:
     /// PDU bits include data, parity and stop bits; the start bit is not counted.
     uint8_t m_pduBits;
     bool m_intTxEnabled;
+    bool m_rxGPIOPullupEnabled;
     SoftwareSerialParity m_parityMode;
     uint8_t m_stopBits;
     bool m_lastReadParity;
@@ -250,7 +255,7 @@ private:
     uint32_t m_bitCycles;
     uint8_t m_parityInPos;
     uint8_t m_parityOutPos;
-    int8_t m_rxCurBit; // 0 thru (m_pduBits - m_stopBits - 1): data/parity bits. -1: start bit. (m_pduBits - 1): stop bit.
+    int8_t m_rxLastBit; // 0 thru (m_pduBits - m_stopBits - 1): data/parity bits. -1: start bit. (m_pduBits - 1): stop bit.
     uint8_t m_rxCurByte = 0;
     std::unique_ptr<circular_queue<uint8_t> > m_buffer;
     std::unique_ptr<circular_queue<uint8_t> > m_parityBuffer;
@@ -260,7 +265,7 @@ private:
     // the ISR stores the relative bit times in the buffer. The inversion corrected level is used as sign bit (2's complement):
     // 1 = positive including 0, 0 = negative.
     std::unique_ptr<circular_queue<uint32_t, SoftwareSerial*> > m_isrBuffer;
-    const Delegate<void(unsigned int&&), SoftwareSerial*> m_isrBufferForEachDel = { [](SoftwareSerial* self, uint32_t&& isrCycle) { self->rxBits(isrCycle); }, this };
+    const Delegate<void(uint32_t&&), SoftwareSerial*> m_isrBufferForEachDel = { [](SoftwareSerial* self, uint32_t&& isrCycle) { self->rxBits(isrCycle); }, this };
     std::atomic<bool> m_isrOverflow;
     uint32_t m_isrLastCycle;
     bool m_rxCurParity = false;
