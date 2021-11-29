@@ -1,7 +1,23 @@
 #define M5STACK_MPU6886
 #define M5STACK_MYBUILD
+#include <Arduino.h>
+#include "Preferences.h"
 #include <M5Stack.h>
 #include "struct_and_union.h"
+#include "math.h"
+#include "M5_BMM150.h"
+#include "M5_BMM150_DEFS.h"
+#include <EEPROM.h>
+
+Preferences prefs;
+
+struct bmm150_dev dev;
+bmm150_mag_data mag_offset; // Compensation magnetometer float data storage
+bmm150_mag_data mag_max;
+bmm150_mag_data mag_min;
+int mag_compensate_x = 455;
+int mag_compensate_y = 760;
+int mag_compensate_z = 470;
 
 float accX = 0.0F;  // Define variables for storing inertial sensor data
 float accY = 0.0F;
@@ -14,24 +30,48 @@ float roll  = 0.0F;
 float yaw   = 0.0F;
 float temp = 0.0F;
 const int debug = 0;
+const int mag_pin = 16;
+const int echo_pin = 17;
+const int line_tracer = 2;
+const int lt_pin = 5;
 const int receive_data_size = 24;
 const int transmit_data_size = 42;
 int current_unique_id = 0;
 
 void setup(){
-  M5.begin(); //Init M5Core.
+  Serial.begin(115200);
+  Serial.println("before M5.begin()");
+  Serial.end();
+  M5.begin(true, false, true, false); //Init M5Core(Initialize LCD, serial port).
+  Serial.begin(115200);
+  Serial.println("after M5.begin()");
   M5.Power.begin(); //Init Power module.
+  Wire.begin(21, 22, 400000); //Set the frequency of the SDA SCL.
   M5.IMU.Init();  //Init IMU sensor.
-//  M5.Lcd.fillScreen(BLACK); //Set the screen background color to black.
-//  M5.Lcd.setTextColor(GREEN , BLACK); //Sets the foreground color and background color of the displayed text.
-//  M5.Lcd.setTextSize(2);  //Set the font size.
+  while(bmm150_initialization() != BMM150_OK){
+      Serial.println(">BMM150 init failed");
+      delay(2000);
+      M5.IMU.Init();
+      bmm150_initialization();
+  }
+  Serial.println(">BMM150 init succeeded");
+  bmm150_offset_load();
   Serialsetup();
   xTaskCreatePinnedToCore(task0, "Task0", 4096, NULL, 1, NULL, 0);
   xTaskCreatePinnedToCore(task1, "Task1", 4096, NULL, 1, NULL, 1);  
 }
 
+void mag_calibrate(){
+  pinMode(mag_pin, INPUT);
+  if (digitalRead(mag_pin) == LOW) {
+    Serial.println(">Calibration Start");
+    bmm150_calibrate(10000);
+    Serial.println(">Calibration finished");
+  }
+}
+
 void loop() {
-  
+  delay(1000);
 }
 
 void task0(void* arg){
@@ -88,6 +128,37 @@ void LCDprint(){
   M5.Lcd.printf("%5.2f  %5.2f  %5.2f deg", pitch, roll, yaw);
   M5.Lcd.setCursor(0, 175);
   M5.Lcd.printf("Temperature : %.2f C", temp);
+}
+
+void LTsetup() {
+  pinMode(lt_pin, INPUT);
+  pinMode(line_tracer, INPUT);
+  if(digitalRead(lt_pin) == HIGH) {
+    Serial.println(">Line tracer Setup Start");
+    Serial.flush();
+    Serial.println(">pls connect check pin and GND to get the brightness on the line");
+    Serial.flush();
+    while(digitalRead(lt_pin) == HIGH){
+      delay(100);
+    }
+    delay(1000);
+    int onLine = analogRead(line_tracer);
+    Serial.println(">OK. pls connect check pin and VCC to get the brightness on the load");
+    Serial.flush();
+    while(digitalRead(lt_pin) == LOW) {
+      delay(100);
+    }
+    delay(1000);
+    int onLoad = analogRead(line_tracer);
+    int bright_thresh = (onLine + onLoad) /2;
+    EEPROM.write(0,bright_thresh);
+    Serial.println(">Setup Complete");
+    Serial.flush();
+    Serial.print(">Brightness threshold : ");
+    Serial.flush();
+    Serial.println(bright_thresh);
+    Serial.flush();
+  }
 }
 
 Transmit_Packet *t_head;
@@ -241,8 +312,9 @@ void work(){
     float accX, accY, accZ;
     float gyroX, gyroY, gyroZ;
     float pitch, roll, yaw;
-    float Temp;
+    float temp;
     float data[4];
+
 
     for (int i=0; i<4; i++) {
       t_packet->data[i] = r_head->data[i];
@@ -265,147 +337,39 @@ void work(){
         break;
     }
     switch (signaltype) {
-      /*case 10:
-        switch(rot_dir) {
-          case 0:
-            switch(datatype) {
-              case 0:
-                Step.right_f(data[0],data[1]);
-                break;
-              case 1:
-                Step.right_f(data[0],data[1]);
-                break;
-            }
-            break;
-          case 1:
-            switch(datatype) {
-              case 0:
-                Step.right_b(data[0],data[1]);
-                break;
-              case 1:
-                Step.right_b(data[0],data[0]*data[1]);
-                break;
-            }
-            break;
-          case 2:
-            Step.lock_right();
-            break;
-        }
-        break;
-      case 20:
-        switch(rot_dir) {
-          case 0:
-            switch(datatype) {
-              case 0:
-                Step.left_f(data[0],data[1]);
-                break;
-              case 1:
-                Step.left_f(data[0],data[0]*data[1]);
-                break;
-            }
-            break;
-          case 1:
-            switch(datatype) {
-              case 0:
-                Step.left_b(data[0],data[1]);
-                break;
-              case 1:
-                Step.left_b(data[0],data[0]*data[1]);
-                break;
-            }
-            break;
-          case 2:
-            Step.lock_left();
-            break;
-        }
-        break;
-      case 30:
-        switch(rot_dir) {
-          case 2:
-            Step.lock_both();
-          case 3:
-            switch(datatype) {
-              case 0:
-                Step.move_forward(data[0], data[1]);
-                break;
-              case 1:
-                Step.move_forward(data[0], data[0]*data[1]);
-                break;
-            }
-            break;
-          case 4:
-            switch(datatype) {
-              case 0:
-                Step.move_backward(data[0], data[1]);
-                break;
-              case 1:
-                Step.move_backward(data[0], data[0]*data[1]);
-                break;
-            }
-            break;
-          case 5:
-            switch(datatype) {
-              case 0:
-                Step.move_right(data[0], data[1],data[2], data[3]);
-                break;
-              case 1:
-                Step.move_right(data[0], data[0]*data[1],data[2], data[3]);
-                break;
-            }
-            break;
-          case 6:
-            switch(datatype) {
-              case 0:
-                Step.move_left(data[0], data[1],data[2], data[3]);
-                break;
-              case 1:
-                Step.move_left(data[0], data[0]*data[1],data[2], data[3]);
-                break;
-            }
-            break;
-        }
-        break;
       case 40:
-        if (status) {
-          t_packet->data[0] = get_dist(20);
-        } else if (t_packet->data[0] > 10 & t_packet->data[0] < 40) {
+        M5.IMU.getTempData(&temp);  //Stores the inertial sensor temperature to temp.
+        if (temp >= -10 & temp < 40) {
+          t_packet->data[0] = get_dist(temp);
+        } else if (t_packet->data[0] >= -10 & t_packet->data[0] < 40) {
           t_packet->data[0] = get_dist(t_packet->data[0]);
         } else {
-          t_packet->data[0] = -1;
+          t_packet->data[0] = get_dist(20);
         }
-        serialTransmit(t_packet);
         break;
       case 50:
         bright_thresh = EEPROM.read(0);
         t_packet->data[0] = (digitalRead(line_tracer) >= bright_thresh)?1:0;
-        serialTransmit(t_packet);
         break;
-      case 60:
-        servo.setDegree1(t_packet->data[0]);
-        servo.work();
-        break;
-      case 70:
-        servo.setDegree2(t_packet->data[0]);
-        servo.work();
-        break;*/
       case 80:
-        float t1 = 0.721;
-        float t2 = 11.4514;
-        float t3 = 45.45;
         M5.IMU.getGyroData(&gyroX,&gyroY,&gyroZ);
         M5.IMU.getAccelData(&accX,&accY,&accZ); //Stores the triaxial accelerometer.
         M5.IMU.getAhrsData(&pitch,&roll,&yaw);  //Stores the inertial sensor attitude.
-        M5.IMU.getTempData(&temp);  //Stores the inertial sensor temperature to temp.
         LCDprint();
+        bmm150_read_mag_data(&dev);
+        dev.data.x += mag_compensate_x;
+        dev.data.y += mag_compensate_y;
+        dev.data.z += mag_compensate_z;
+        float head_dir = atan2(dev.data.x -  mag_offset.x, dev.data.y - mag_offset.y) * 180.0 / M_PI;
         t_packet->data[0] = accX;
         t_packet->data[1] = accY;
         t_packet->data[2] = accZ;
         t_packet->data[3] = gyroX;
         t_packet->data[4] = gyroY;
         t_packet->data[5] = gyroZ;
-        t_packet->data[6] = t1;
-        t_packet->data[7] = t2;
-        t_packet->data[8] = t3;
+        t_packet->data[6] = dev.data.x;
+        t_packet->data[7] = dev.data.y;
+        t_packet->data[8] = dev.data.z;
         break;
     }
     if (debug) {
@@ -420,30 +384,142 @@ void work(){
 
 void serialTransmit(Transmit_Packet *t_packet){
   if (t_packet != NULL) {
-    Serial.write((byte)(t_packet->signaltype >> 8) & 0xFF);
-    Serial.flush();
-    Serial.write((byte)(t_packet->signaltype & 0xFF));
-    Serial.flush();
-    Serial.write((byte)(t_packet->unique_id >> 24) & 0xFF);
-    Serial.flush();
-    Serial.write((byte)(t_packet->unique_id >> 16) & 0xFF);
-    Serial.flush();
-    Serial.write((byte)(t_packet->unique_id >> 8) & 0xFF);
-    Serial.flush();
-    Serial.write((byte)(t_packet->unique_id & 0xFF));
-    Serial.flush();
-    for (int i=0; i<9; i++) {
-      Serial.write((byte)((long)t_packet->data[i] >> 24) & 0xFF);
-      Serial.flush();
-      Serial.write((byte)((long)t_packet->data[i] >> 16) & 0xFF);
-      Serial.flush();
-      Serial.write((byte)((long)t_packet->data[i] >> 8) & 0xFF);
-      Serial.flush();
-      Serial.write((byte)((long)t_packet->data[i] & 0xFF));
-      Serial.flush();
+//    Serial.write((byte)(t_packet->signaltype >> 8) & 0xFF);
+//    Serial.flush();
+//    Serial.write((byte)(t_packet->signaltype & 0xFF));
+//    Serial.flush();
+//    Serial.write((byte)(t_packet->unique_id >> 24) & 0xFF);
+//    Serial.flush();
+//    Serial.write((byte)(t_packet->unique_id >> 16) & 0xFF);
+//    Serial.flush();
+//    Serial.write((byte)(t_packet->unique_id >> 8) & 0xFF);
+//    Serial.flush();
+//    Serial.write((byte)(t_packet->unique_id & 0xFF));
+//    Serial.flush();
+//    for (int i=0; i<9; i++) {
+//      Serial.write((byte)((long)t_packet->data[i] >> 24) & 0xFF);
+//      Serial.flush();
+//      Serial.write((byte)((long)t_packet->data[i] >> 16) & 0xFF);
+//      Serial.flush();
+//      Serial.write((byte)((long)t_packet->data[i] >> 8) & 0xFF);
+//      Serial.flush();
+//      Serial.write((byte)((long)t_packet->data[i] & 0xFF));
+//      Serial.flush();
+//    }
+//    Serial.println("");
+//    Serial.flush();
+    if (t_packet->signaltype == 80) {
+      Serial.printf(">#{\"SignalType\" : %d, \"UniqueID\" : %d, \"AccelX\" : %.2f, \"AccelY\" : %.2f, \"AccelZ\" : %.2f, \
+      \"GyroX\" : %.2f, \"GyroY\" : %.2f, \"GyroZ\" : %.2f, \"MagX\" : %.2f, \"MagY\" : %.2f, \"MagZ\" : %.2f}\n", \
+      t_packet->signaltype, t_packet->unique_id, t_packet->data[0], t_packet->data[1], t_packet->data[2], t_packet->data[3], \
+      t_packet->data[4], t_packet->data[5], t_packet->data[6], t_packet->data[7], t_packet->data[8]);
+    } else {
+      Serial.printf(">#{\"SignalType\" : %d, \"UniqueID\" : %d, \"Data1\" : %.2f, \"Data2\" : %.2f, \"Data3\" : %.2f, \
+      \"Data4\" : %.2f, \"Data5\" : %.2f, \"Data6\" : %.2f, \"Data7\" : %.2f, \"Data8\" : %.2f, \"Data9\" : %.2f}\n", \
+      t_packet->signaltype, t_packet->unique_id, t_packet->data[0], t_packet->data[1], t_packet->data[2], t_packet->data[3], \
+      t_packet->data[4], t_packet->data[5], t_packet->data[6], t_packet->data[7], t_packet->data[8]);
     }
-    Serial.println("");
-    Serial.flush();
     free(t_packet);  
   }
+}
+
+float get_dist(float temperature){
+  float velocity = 331.5 + 0.61 * (float)temperature;//m/s
+  int pulse_time = pulseIn(echo_pin, HIGH, 20000);//us
+  float distance = velocity * 1000 * (pulse_time / 2) / 1000000; //mm 
+  return distance;
+}
+
+int8_t i2c_read(uint8_t dev_id, uint8_t reg_addr, uint8_t *read_data, uint16_t len){
+    if(M5.I2C.readBytes(dev_id, reg_addr, len, read_data)){ // Check whether the device ID, address, data exist.
+        return BMM150_OK;
+    }else{
+        return BMM150_E_DEV_NOT_FOUND;
+    }
+}
+
+int8_t i2c_write(uint8_t dev_id, uint8_t reg_addr, uint8_t *read_data, uint16_t len){
+    if(M5.I2C.writeBytes(dev_id, reg_addr, read_data, len)){    //Writes data of length len to the specified device address.
+        return BMM150_OK;
+    }else{
+        return BMM150_E_DEV_NOT_FOUND;
+    }
+}
+
+int8_t bmm150_initialization(){
+    int8_t rslt = BMM150_OK;
+
+    dev.dev_id = 0x10;  //Device address setting.
+    dev.intf = BMM150_I2C_INTF; //SPI or I2C interface setup.
+    dev.read = i2c_read;    //Read the bus pointer.
+    dev.write = i2c_write;  //Write the bus pointer.
+    dev.delay_ms = delay;
+
+    // Set the maximum range range
+    mag_max.x = -2000;
+    mag_max.y = -2000;
+    mag_max.z = -2000;
+
+    // Set the minimum range
+    mag_min.x = 2000;
+    mag_min.y = 2000;
+    mag_min.z = 2000;
+
+    rslt = bmm150_init(&dev);   //Memory chip ID.
+    dev.settings.pwr_mode = BMM150_NORMAL_MODE;
+    rslt |= bmm150_set_op_mode(&dev);   //Set the sensor power mode.
+    dev.settings.preset_mode = BMM150_PRESETMODE_ENHANCED;
+    rslt |= bmm150_set_presetmode(&dev);    //Set the preset mode of .
+    return rslt;
+}
+
+void bmm150_offset_save(){  //Store the data.
+    prefs.begin("bmm150", false);
+    prefs.putBytes("offset", (uint8_t *)&mag_offset, sizeof(bmm150_mag_data));
+    prefs.end();
+}
+
+void bmm150_offset_load(){  //load the data.
+    if(prefs.begin("bmm150", true)){
+        prefs.getBytes("offset", (uint8_t *)&mag_offset, sizeof(bmm150_mag_data));
+        prefs.end();
+        Serial.println(">bmm150 load offset finish....");
+    }else{
+        Serial.println(">bmm150 load offset failed....");
+    }
+}
+
+void bmm150_calibrate(uint32_t calibrate_time){ //bbm150 data calibrate.
+    uint32_t calibrate_timeout = 0;
+
+    calibrate_timeout = millis() + calibrate_time;
+    Serial.printf(">Go calibrate, use %d ms \r\n", calibrate_time);  //The serial port outputs formatting characters.  串口输出格式化字符
+    Serial.printf(">running ...");
+
+    while (calibrate_timeout > millis()){
+        bmm150_read_mag_data(&dev); //read the magnetometer data from registers.
+        if(dev.data.x){
+            mag_min.x = (dev.data.x < mag_min.x) ? dev.data.x : mag_min.x;
+            mag_max.x = (dev.data.x > mag_max.x) ? dev.data.x : mag_max.x;
+        }
+        if(dev.data.y){
+            mag_max.y = (dev.data.y > mag_max.y) ? dev.data.y : mag_max.y;
+            mag_min.y = (dev.data.y < mag_min.y) ? dev.data.y : mag_min.y;
+        }
+        if(dev.data.z){
+            mag_min.z = (dev.data.z < mag_min.z) ? dev.data.z : mag_min.z;
+            mag_max.z = (dev.data.z > mag_max.z) ? dev.data.z : mag_max.z;
+        }
+        delay(100);
+    }
+
+    mag_offset.x = (mag_max.x + mag_min.x) / 2;
+    mag_offset.y = (mag_max.y + mag_min.y) / 2;
+    mag_offset.z = (mag_max.z + mag_min.z) / 2;
+    bmm150_offset_save();
+
+    Serial.printf(">calibrate finish ... \n");
+    Serial.printf(">mag_max.x: %.2f x_min: %.2f \n", mag_max.x, mag_min.x);
+    Serial.printf(">y_max: %.2f y_min: %.2f \n", mag_max.y, mag_min.y);
+    Serial.printf(">z_max: %.2f z_min: %.2f \n", mag_max.z, mag_min.z);
 }
