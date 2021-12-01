@@ -18,7 +18,7 @@ bmm150_mag_data mag_min;
 int mag_compensate_x = 455;
 int mag_compensate_y = 760;
 int mag_compensate_z = 470;
-
+int8_t bmm_status;
 float accX = 0.0F;  // Define variables for storing inertial sensor data
 float accY = 0.0F;
 float accZ = 0.0F;
@@ -36,6 +36,7 @@ const int line_tracer = 2;
 const int lt_pin = 5;
 const int receive_data_size = 24;
 const int transmit_data_size = 42;
+int current_signaltype = 0;
 int current_unique_id = 0;
 
 void setup(){
@@ -48,17 +49,27 @@ void setup(){
   M5.Power.begin(); //Init Power module.
   Wire.begin(21, 22, 400000); //Set the frequency of the SDA SCL.
   M5.IMU.Init();  //Init IMU sensor.
-  while(bmm150_initialization() != BMM150_OK){
+  Serialsetup();
+  xTaskCreatePinnedToCore(task0, "Task0", 4096, NULL, 1, NULL, 0);
+  xTaskCreatePinnedToCore(task1, "Task1", 4096, NULL, 1, NULL, 1);
+  xTaskCreatePinnedToCore(task2, "Task2", 4096, NULL, 2, NULL, 0);
+}
+
+void bmmsetup(){
+  int count = 0;
+  while((bmm_status = bmm150_initialization()) != BMM150_OK){
       Serial.println(">BMM150 init failed");
       delay(2000);
       M5.IMU.Init();
       bmm150_initialization();
+      if (count >= 10) {
+        M5.Power.reset();
+      }
+      count++;
   }
   Serial.println(">BMM150 init succeeded");
   bmm150_offset_load();
-  Serialsetup();
-  xTaskCreatePinnedToCore(task0, "Task0", 4096, NULL, 1, NULL, 0);
-  xTaskCreatePinnedToCore(task1, "Task1", 4096, NULL, 1, NULL, 1);  
+  
 }
 
 void mag_calibrate(){
@@ -94,6 +105,15 @@ void task1(void* arg){
   }
 }
 
+void task2(void* arg){
+  long now = micros();
+  while(1){
+    if(micros()-now >= 16666){
+      LCDprint();
+    }
+  }
+}
+
 void Serialsetup() {
 #if defined(ARDUINO_MYBUILD)
   Serial.begin(9600);
@@ -118,15 +138,36 @@ void IMUgetdata(){
 }
 
 void LCDprint(){
-  M5.Lcd.setCursor(0, 20);  //Move the cursor position to (x,y).
-  M5.Lcd.printf("gyroX,  gyroY, gyroZ"); //Screen printingformatted string.
-  M5.Lcd.setCursor(0, 42);
-  M5.Lcd.printf("%6.2f %6.2f%6.2f o/s", gyroX, gyroY, gyroZ);
+  M5.IMU.getGyroData(&gyroX,&gyroY,&gyroZ);
+  M5.IMU.getAccelData(&accX,&accY,&accZ); //Stores the triaxial accelerometer.
+  M5.IMU.getAhrsData(&pitch,&roll,&yaw);  //Stores the inertial sensor attitude.
+  bmm150_read_mag_data(&dev);
+  float mag_x = dev.data.x + mag_compensate_x;
+  float mag_y = dev.data.y + mag_compensate_y;
+  float mag_z = dev.data.z + mag_compensate_z;
+  M5.Lcd.setCursor(0, 20);
+  if (bmm_status == BMM150_OK){
+    M5.Lcd.printf("BMM setup completed");
+  } else {
+    M5.Lcd.printf("BMM setup failed");
+  }
+  // M5.Lcd.setCursor(0, 40);  //Move the cursor position to (x,y).
+  // M5.Lcd.printf("SignalType, UniqueID"); //Screen printingformatted string.
+  // M5.Lcd.setCursor(0, 60);
+  // M5.Lcd.printf("%d %d", current_signaltype, current_unique_id);
+  M5.Lcd.setCursor(0, 40);  //Move the cursor position to (x,y).
+  M5.Lcd.printf("AccelX, AccelY, AccelZ"); //Screen printingformatted string.
+  M5.Lcd.setCursor(0, 60);
+  M5.Lcd.printf("%6.2f %6.2f%6.2f o/s", accX, accY, accZ);
+  M5.Lcd.setCursor(0, 80);  //Move the cursor position to (x,y).
+  M5.Lcd.printf("GyroX, GyroY, GyroZ"); //Screen printingformatted string.
+  M5.Lcd.setCursor(0, 100);
+  M5.Lcd.printf("%6.2f %6.2f%6.2f G", gyroX, gyroY, gyroZ);
   M5.Lcd.setCursor(0, 120);
-  M5.Lcd.printf("pitch,  roll,  yaw");
-  M5.Lcd.setCursor(0, 142);
-  M5.Lcd.printf("%5.2f  %5.2f  %5.2f deg", pitch, roll, yaw);
-  M5.Lcd.setCursor(0, 175);
+  M5.Lcd.printf("MagX, MagY, MagZ");
+  M5.Lcd.setCursor(0, 140);
+  M5.Lcd.printf("%5.2f  %5.2f  %5.2f mT", mag_x, mag_y, mag_z);
+  M5.Lcd.setCursor(0, 200);
   M5.Lcd.printf("Temperature : %.2f C", temp);
 }
 
@@ -308,6 +349,7 @@ void work(){
     int signaltype = r_head->signaltype;
     int datatype = r_head->datatype;
     int rot_dir = r_head->rot_dir;
+    current_signaltype = signaltype;
     float bright_thresh;
     float accX, accY, accZ;
     float gyroX, gyroY, gyroZ;
@@ -355,11 +397,11 @@ void work(){
         M5.IMU.getGyroData(&gyroX,&gyroY,&gyroZ);
         M5.IMU.getAccelData(&accX,&accY,&accZ); //Stores the triaxial accelerometer.
         M5.IMU.getAhrsData(&pitch,&roll,&yaw);  //Stores the inertial sensor attitude.
-        LCDprint();
         bmm150_read_mag_data(&dev);
         dev.data.x += mag_compensate_x;
         dev.data.y += mag_compensate_y;
         dev.data.z += mag_compensate_z;
+        LCDprint();
         float head_dir = atan2(dev.data.x -  mag_offset.x, dev.data.y - mag_offset.y) * 180.0 / M_PI;
         t_packet->data[0] = accX;
         t_packet->data[1] = accY;
