@@ -137,7 +137,6 @@ void setup()
   
 // 作成したスプライトはpushSpriteで任意の座標に出力できます。
 //  base.pushSprite(100,60); // (x,y)=((320-120)/2,(240-120)/2) lcdに対して
-  
 }
 
 void compassplot(float a) {
@@ -267,7 +266,9 @@ void loop()
 
   lcd.setCursor(40, 230);
   lcd.printf("BTN_A:CAL ");
+}
 
+void M5calibration(){
   if(M5.BtnA.wasPressed())
   {
     lcd.clear();        // 黒で塗り潰し
