@@ -1,7 +1,10 @@
+#define M5STACK_MPU6886
+
 #include <Arduino.h>
 #include <Wire.h>
 #include "Preferences.h"
 #include "M5Stack.h"
+#include <M5StackUpdater.h> 
 #include "math.h"
 #include "bmm150.h"
 #include "bmm150_defs.h"

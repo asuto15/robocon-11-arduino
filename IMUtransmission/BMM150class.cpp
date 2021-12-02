@@ -164,7 +164,7 @@ void BMM150class::Init(void)
     M5.Lcd.fillScreen(BLACK);
     M5.Lcd.setTextColor(WHITE);
 
-    if (bmm150_initialization() != BMM150_OK)
+    /*if (bmm150_initialization() != BMM150_OK)
     {
         M5.Lcd.setCursor(0, 10);
         M5.Lcd.print("BMM150 init failed");
@@ -172,8 +172,20 @@ void BMM150class::Init(void)
         {
             delay(100);
         }
+    }-default*/
+    int8_t bmm_status;
+    int count = 0;
+    while ((bmm_status = bmm150_initialization()) != BMM150_OK) {
+        Serial.println(">BMM150 init failed");
+        delay(500);
+        M5.IMU.Init();
+        bmm150_initialization();
+        if (count >= 10) {
+        M5.Power.reset();
+        }
+        count++;
     }
-    
+    Serial.println(">BMM150 init succeeded");
     bmm150_offset_load();
 
     Serial.printf("MID X : %.2f \t MID Y : %.2f \t MID Z : %.2f \n", mag_offset.x, mag_offset.y, mag_offset.z);
