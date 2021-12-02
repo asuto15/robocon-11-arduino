@@ -46,7 +46,9 @@ float pitch = 0.0F;
 float roll = 0.0F;
 float yaw = 0.0F;
 BMM150class bmm150;
-
+uint32_t Now_w = 0;
+uint32_t lastUpdate_w = 0;
+float deltat_w = 0.0f;
 uint32_t Now = 0;
 uint32_t lastUpdate = 0;
 float deltat = 0.0f;
@@ -72,6 +74,7 @@ int current_unique_id = 0;
 int bright_thresh = EEPROM.read(0);
 
 void setup() {
+  enableCore1WDT();
   Serial.begin(115200);
   M5.begin(true, false, true,
            false);             // Init M5Core(Initialize LCD, serial port).
@@ -84,24 +87,33 @@ void setup() {
   // の4方向から設定します。(4～7を使用すると上下反転になります。)
   lcd.setRotation(1);
   initGyro();
+  Serial.println("1");
   bmm150.Init();
-
+  Serial.println("2");
   bmm150.getMagnetOffset(&magoffsetX, &magoffsetY, &magoffsetZ);
+  Serial.println("3");
   bmm150.getMagnetScale(&magscaleX, &magscaleY, &magscaleZ);
+  Serial.println("4");
   // 16の方がSPI通信量が少なく高速に動作しますが、赤と青の諧調が5bitになります。
   lcd.setColorDepth(16);
+  Serial.println("5");
   // clearまたはfillScreenで画面全体を塗り潰します。
   lcd.clear();  // 黒で塗り潰し
                 // スプライト（オフスクリーン）への描画も同様の描画関数が使えます。
                 // 最初にスプライトの色深度をsetColorDepthで指定します。（省略した場合は16として扱われます。）
+  Serial.println("6");
   compass.setColorDepth(16);
+  Serial.println("7");
   base.setColorDepth(16);
   // createSpriteで幅と高さを指定してメモリを確保します。
   // 消費するメモリは色深度と面積に比例します。大きすぎるとメモリ確保に失敗しますので注意してください。
+  Serial.println("8");
   compass.createSprite(180, 180);
+  Serial.println("9");
   base.createSprite(120, 120);
 
   // base airplane
+  Serial.println("10");
   base.drawLine(52, 36, 52, 14, TFT_WHITE);   // front L
   base.drawLine(2, 62, 52, 36, TFT_WHITE);    // wing L
   base.drawLine(4, 76, 2, 62, TFT_WHITE);     // wing L
@@ -129,10 +141,9 @@ void setup() {
 
   // 作成したスプライトはpushSpriteで任意の座標に出力できます。
   //  base.pushSprite(100,60); // (x,y)=((320-120)/2,(240-120)/2) lcdに対して
+  Serial.println("11");
   xTaskCreatePinnedToCore(task0, "Task0", 4096, NULL, 1, NULL, 0);
-  xTaskCreatePinnedToCore(task1, "Task1", 4096, NULL, 1, NULL, 1);
-  xTaskCreatePinnedToCore(task2, "Task2", 4096, NULL, 2, NULL, 0);
-  xTaskCreatePinnedToCore(task3, "Task3", 4096, NULL, 2, NULL, 1);
+  Serial.println("12");
 }
 
 void mag_calibrate() {
@@ -286,6 +297,7 @@ void loop() {
   lcd.setTextColor(TFT_BLACK, TFT_BLACK);
   lcd.drawString(String(p_head_dir), 30, 50);
   lcd.drawString(String(p_yaw), 30, 80);
+  Serial.printf("p_deltat : %f\n",p_deltat);
   lcd.drawString(String(1 / p_deltat), 270, 215);
 
   lcd.setTextColor(TFT_WHITE, TFT_BLACK);
@@ -294,6 +306,7 @@ void loop() {
   lcd.drawString("Heading", 20, 65);
   lcd.drawString(String(yaw), 30, 80);
   lcd.drawString("sampleFreq", 250, 200);
+  Serial.printf("deltat : %f\n", deltat);
   lcd.drawString(String(1 / deltat), 270, 215);
 
   p_head_dir = head_dir;
@@ -325,38 +338,11 @@ void M5calibration() {
 void task0(void *arg) {
   long now = micros();
   while (1) {
-    if (micros() - now >= 10000) {
-      receivePacket();
-      now = micros();
-    }
-  }
-}
-
-void task1(void *arg) {
-  long now = micros();
-  while (1) {
-    if (micros() - now >= 10000) {
+    if (micros() - now >= 1000) {
+      if (Serial.available() > 0) {
+       receivePacket(); 
+      }
       work();
-      now = micros();
-    }
-  }
-}
-
-void task2(void *arg) {
-  long now = micros();
-  while (1) {
-    if (micros() - now >= 16666) {
-      compassplot(yaw);
-      now = micros();
-    }
-  }
-}
-
-void task3(void *arg) {
-  long now = micros();
-  bright_thresh = EEPROM.read(0);
-  while (1) {
-    if (micros() - now >= 16666) {
       if (analogRead(line_tracer) >= bright_thresh) {
         lt_event();
       }
@@ -705,18 +691,18 @@ void work() {
         if (head_dir < 0) head_dir += 2 * PI;
         if (head_dir > 2 * PI) head_dir -= 2 * PI;
         head_dir *= RAD_TO_DEG;
-        Now = micros();
-        deltat = ((Now - lastUpdate) / 1000000.0f);  // 0.09
-        lastUpdate = Now;
+        Now_w = micros();
+        deltat_w = ((Now_w - lastUpdate_w) / 1000000.0f);  // 0.09
+        lastUpdate_w = Now_w;
 #ifdef MADGWICK
         MadgwickQuaternionUpdate(accX, accY, accZ, gyroX * DEG_TO_RAD,
                                  gyroY * DEG_TO_RAD, gyroZ * DEG_TO_RAD,
-                                 -magnetX, magnetY, -magnetZ, deltat);
+                                 -magnetX, magnetY, -magnetZ, deltat_w);
 #endif
 #ifdef MAHONY
         MahonyQuaternionUpdate(accX, accY, accZ, gyroX * DEG_TO_RAD,
                                gyroY * DEG_TO_RAD, gyroZ * DEG_TO_RAD, -magnetX,
-                               magnetY, -magnetZ, deltat);
+                               magnetY, -magnetZ, deltat_w);
         // delay(10); // adjust sampleFreq = 50Hz
 #endif
         yaw = atan2(
