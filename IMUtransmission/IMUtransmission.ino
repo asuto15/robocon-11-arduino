@@ -53,7 +53,8 @@ uint32_t Now = 0;
 uint32_t lastUpdate = 0;
 float deltat = 0.0f;
 float p_head_dir = 0, p_yaw = 0, p_deltat;
-
+long now = micros();
+float head_dir=0;
 struct bmm150_dev dev;
 bmm150_mag_data mag_offset;  // Compensation magnetometer float data storage
 bmm150_mag_data mag_max;
@@ -142,8 +143,6 @@ void setup() {
   // 作成したスプライトはpushSpriteで任意の座標に出力できます。
   //  base.pushSprite(100,60); // (x,y)=((320-120)/2,(240-120)/2) lcdに対して
   Serial.println("11");
-  xTaskCreatePinnedToCore(task0, "Task0", 4096, NULL, 1, NULL, 0);
-  Serial.println("12");
 }
 
 void mag_calibrate() {
@@ -223,6 +222,19 @@ void compassplot(float a) {
 
 void loop() {
   // put your main code here, to run repeatedly:
+  if (micros() - now >= 1000) {
+    if (Serial.available() > 0) {
+      receivePacket(); 
+    }
+    work();
+    int lt_value;
+    if ((lt_value = analogRead(line_tracer)) >= bright_thresh) {
+      Transmit_Packet* t_packet2;
+      lt_event(t_packet2,lt_value);
+      serialTransmit(t_packet2);
+    }
+    now = micros();
+  }
   M5.update();
   M5.IMU.getGyroData(&gyroX, &gyroY, &gyroZ);
   M5.IMU.getAccelData(&accX, &accY, &accZ);
@@ -234,8 +246,11 @@ void loop() {
   magnetX = (magnetX - magoffsetX) * magscaleX;
   magnetY = (magnetY - magoffsetY) * magscaleY;
   magnetZ = (magnetZ - magoffsetZ) * magscaleZ;
-
-  float head_dir = atan2(magnetX, magnetY);
+  Serial.printf("loop magnetX : %f\n",magnetX);
+  Serial.printf("loop magnetY : %f\n",magnetY);
+  Serial.printf("loop magnetZ : %f\n",magnetZ);
+  float head_dir = 0;
+  if (magnetX != 0 & magnetY != 0) head_dir = atan2(magnetX, magnetY);
   if (head_dir < 0) head_dir += 2 * PI;
   if (head_dir > 2 * PI) head_dir -= 2 * PI;
 
@@ -244,19 +259,6 @@ void loop() {
   Now = micros();
   deltat = ((Now - lastUpdate) / 1000000.0f);  // 0.09
   lastUpdate = Now;
-
-#ifdef MADGWICK
-  MadgwickQuaternionUpdate(accX, accY, accZ, gyroX * DEG_TO_RAD,
-                           gyroY * DEG_TO_RAD, gyroZ * DEG_TO_RAD, -magnetX,
-                           magnetY, -magnetZ, deltat);
-#endif
-
-#ifdef MAHONY
-  MahonyQuaternionUpdate(accX, accY, accZ, gyroX * DEG_TO_RAD,
-                         gyroY * DEG_TO_RAD, gyroZ * DEG_TO_RAD, -magnetX,
-                         magnetY, -magnetZ, deltat);
-  // delay(10); // adjust sampleFreq = 50Hz
-#endif
 
   yaw =
       atan2(2.0f * (*(getQ() + 1) * *(getQ() + 2) + *getQ() * *(getQ() + 3)),
@@ -285,6 +287,9 @@ void loop() {
 #endif
 
   compassplot(yaw);
+  Transmit_Packet* t_packet3;
+  lt_event(t_packet3,analogRead(line_tracer));
+  free(t_packet3);
   // for processing display
   Serial.printf(" %5.2f,  %5.2f,  %5.2f  \r\n", roll, pitch,
                 yaw);  // to processing
@@ -298,7 +303,7 @@ void loop() {
   lcd.drawString(String(p_head_dir), 30, 50);
   lcd.drawString(String(p_yaw), 30, 80);
   Serial.printf("p_deltat : %f\n",p_deltat);
-  lcd.drawString(String(1 / p_deltat), 270, 215);
+  //lcd.drawString(String(1 / p_deltat), 270, 215);
 
   lcd.setTextColor(TFT_WHITE, TFT_BLACK);
   lcd.drawString("MAG X-Y", 20, 35);
@@ -307,12 +312,12 @@ void loop() {
   lcd.drawString(String(yaw), 30, 80);
   lcd.drawString("sampleFreq", 250, 200);
   Serial.printf("deltat : %f\n", deltat);
-  lcd.drawString(String(1 / deltat), 270, 215);
 
   p_head_dir = head_dir;
   p_yaw = yaw;
   p_deltat = deltat;
 
+  //lcd.drawString(String(1 / deltat), 270, 215);
   lcd.setCursor(40, 230);
   lcd.printf("BTN_A:CAL ");
 }
@@ -335,28 +340,10 @@ void M5calibration() {
   }
 }
 
-void task0(void *arg) {
-  long now = micros();
-  while (1) {
-    if (micros() - now >= 1000) {
-      if (Serial.available() > 0) {
-       receivePacket(); 
-      }
-      work();
-      if (analogRead(line_tracer) >= bright_thresh) {
-        lt_event();
-      }
-      now = micros();
-    }
-  }
-}
-
-void lt_event() {
-  Transmit_Packet *t_packet;
+void lt_event(Transmit_Packet* t_packet, int lt_value) {
   if ((t_packet = (Transmit_Packet *)malloc(sizeof(Transmit_Packet))) == NULL) {
     Serial.println(">malloc error with transmit_packet");
     Serial.flush();
-    return;
   }
   M5.IMU.getGyroData(&gyroX, &gyroY, &gyroZ);
   M5.IMU.getAccelData(&accX, &accY, &accZ);  // Stores the triaxial accelerometer.
@@ -371,24 +358,17 @@ void lt_event() {
   magnetX = (magnetX - magoffsetX) * magscaleX;
   magnetY = (magnetY - magoffsetY) * magscaleY;
   magnetZ = (magnetZ - magoffsetZ) * magscaleZ;
-  float head_dir = atan2(magnetX, magnetY);
+  Serial.printf("lt_event magnetX : %f\n",magnetX);
+  Serial.printf("lt_event magnetY : %f\n",magnetY);
+  Serial.printf("lt_event magnetZ : %f\n",magnetZ);
+  if (magnetX != 0 & magnetY != 0) head_dir = atan2(magnetX, magnetY);
   if (head_dir < 0) head_dir += 2 * PI;
   if (head_dir > 2 * PI) head_dir -= 2 * PI;
   head_dir *= RAD_TO_DEG;
   Now = micros();
   deltat = ((Now - lastUpdate) / 1000000.0f);  // 0.09
   lastUpdate = Now;
-#ifdef MADGWICK
-  MadgwickQuaternionUpdate(accX, accY, accZ, gyroX * DEG_TO_RAD,
-                            gyroY * DEG_TO_RAD, gyroZ * DEG_TO_RAD,
-                            -magnetX, magnetY, -magnetZ, deltat);
-#endif
-#ifdef MAHONY
-  MahonyQuaternionUpdate(accX, accY, accZ, gyroX * DEG_TO_RAD,
-                          gyroY * DEG_TO_RAD, gyroZ * DEG_TO_RAD, -magnetX,
-                          magnetY, -magnetZ, deltat);
-  // delay(10); // adjust sampleFreq = 50Hz
-#endif
+
   yaw = atan2(
       2.0f * (*(getQ() + 1) * *(getQ() + 2) + *getQ() * *(getQ() + 3)),
       *getQ() * *getQ() + *(getQ() + 1) * *(getQ() + 1) -
@@ -405,7 +385,7 @@ void lt_event() {
   pitch *= RAD_TO_DEG;
   yaw *= RAD_TO_DEG;
   roll *= RAD_TO_DEG;
-  
+  bright_thresh = EEPROM.read(0);
   t_packet->data[0] = accX;
   t_packet->data[1] = accY;
   t_packet->data[2] = accZ;
@@ -414,15 +394,7 @@ void lt_event() {
   t_packet->data[5] = gyroZ;
   t_packet->data[6] = yaw;
   t_packet->data[7] = temp;
-  t_packet->data[8] = 1.0;
-
-  Serial.printf(">#{\"SignalType\" : %d, \"UniqueID\" : %d, \"AccelX\" : %.2f, \"AccelY\" : %.2f, \"AccelZ\" : %.2f, \
-    \"GyroX\" : %.2f, \"GyroY\" : %.2f, \"GyroZ\" : %.2f, \"Direction\" : %.2f, \"Temperature\" : %.2f, \"LineTracer\" : %d}\n",\
-    (int)90, (int)current_unique_id+1, t_packet->data[0],\
-    t_packet->data[1], t_packet->data[2], t_packet->data[3],\
-    t_packet->data[4], t_packet->data[5], t_packet->data[6],\
-    t_packet->data[7], (int)t_packet->data[8]);
-  free(t_packet);
+  t_packet->data[8] = (lt_value >= bright_thresh)?1:0;
 }
 
 void Serialsetup() {
@@ -746,7 +718,7 @@ void work() {
 
 void serialTransmit(Transmit_Packet *t_packet) {
   if (t_packet != NULL) {
-    if (t_packet->signaltype == 80) {
+    if (t_packet->signaltype == 80 | t_packet->signaltype == 90) {
       Serial.printf(">#{\"SignalType\" : %d, \"UniqueID\" : %d, \"AccelX\" : %.2f, \"AccelY\" : %.2f, \"AccelZ\" : %.2f, \
         \"GyroX\" : %.2f, \"GyroY\" : %.2f, \"GyroZ\" : %.2f, \"Direction\" : %.2f, \"Temperature\" : %.2f, \"LineTracer\" : %.2f}\n",
         t_packet->signaltype, t_packet->unique_id, t_packet->data[0],
