@@ -6,6 +6,8 @@
 #include <utility/quaternionFilters.h>
 // M5Stack.hより後ろにLovyanGFXを書く
 #include <LovyanGFX.hpp>
+#include <EEPROM.h>
+#include "struct_and_union.h"
 
 #define MAHONY
 //#define MADGWICK
@@ -55,12 +57,35 @@ uint32_t Now = 0;
 uint32_t lastUpdate = 0;
 float deltat = 0.0f;
 float p_head_dir=0, p_yaw=0, p_deltat;
+long now = micros();
+float head_dir=0;
+
+float temp = 0.0F;
+int debug = 1;
+const int mag_pin = 16;
+const int echo_pin = 17;
+const int line_tracer = 2;
+const int lt_pin = 5;
+const int receive_data_size = 24;
+const int transmit_data_size = 42;
+int current_signaltype = 0;
+int current_unique_id = 0;
+int bright_thresh = EEPROM.read(0);
+
+Transmit_Packet *t_head;
+Transmit_Packet *t_packet;
+Transmit_Packet *t_tail;
+Receive_Packet *r_head;
+Receive_Packet *r_packet;
+Receive_Packet *r_current;
+Receive_Packet *r_tail;
+Receive_Packet *buf;
 
 void initGyro() {
   
   lcd.clear();        // 黒で塗り潰し
   lcd.setCursor(0, 0);
-  lcd.print("begin gyro calibration");
+  lcd.print(">begin gyro calibration");
 
   for (int i = 0;i < AVERAGENUM_INIT;i++) {
     M5.IMU.getGyroData(&gyroX,&gyroY,&gyroZ);
@@ -77,9 +102,11 @@ void initGyro() {
 void setup()
 {
   // put your setup code here, to run once:
-  M5.begin();
+  M5.begin(true, false, true, false);
+  M5.Power.begin();            // Init Power module.
+  M5.IMU.Init();               // Init IMU sensor.
   if(digitalRead(BUTTON_A_PIN) == 0) { 
-    Serial.println("Will Load menu binary"); 
+    Serial.println(">Will Load menu binary"); 
     updateFromFS(SD); 
     ESP.restart(); 
   } 
@@ -176,6 +203,92 @@ void compassplot(float a) {
 void loop()
 {
   // put your main code here, to run repeatedly:
+  if (micros() - now >= 1000) {
+    if (Serial.available() > 0) {
+      receivePacket(); 
+    }
+    work();
+    int lt_value = analogRead(line_tracer);
+    if (lt_value >= bright_thresh) {
+      Transmit_Packet* t_packet2;
+      lt_event(t_packet2,lt_value);
+      serialTransmit(t_packet2);
+    }
+    now = micros();
+  }
+
+  Transmit_Packet *t_packet4;
+  lt_event(t_packet4, analogRead(line_tracer));
+  free(t_packet4);
+  delay(1); 
+
+#ifdef MAG
+  if (debug) {
+    Serial.printf("MagX : %5.2f\nMagY : %5.2f\nMagZ : %5.2f\n", magnetX, magnetY, magnetZ);
+  }
+#endif
+#ifdef ANGLE
+  if (debug){
+    Serial.printf("Head_dir : %5.2f\n", head_dir);
+  }
+#endif
+
+  compassplot(yaw);
+  // for processing display
+  if (debug){
+    Serial.printf("Roll : %5.2f\nPitch : %5.2f\nYaw : %5.2f\n", roll, pitch, yaw); // to processing
+  }
+
+  lcd.fillTriangle(160,  29, 157,  20, 163,  20, TFT_WHITE);//  0
+  lcd.fillTriangle(251, 120, 260, 117, 260, 123, TFT_WHITE);// 90
+  lcd.fillTriangle(160, 211, 163, 220, 157, 220, TFT_WHITE);//180
+  lcd.fillTriangle( 69, 120,  60, 123,  60, 117, TFT_WHITE);//270
+
+  lcd.setTextColor(TFT_BLACK, TFT_BLACK);
+  lcd.drawString(String(p_head_dir), 30, 50);
+  lcd.drawString(String(p_yaw), 30, 80);
+  lcd.drawString(String(1/p_deltat), 270, 215);
+
+  lcd.setTextColor(TFT_WHITE, TFT_BLACK);
+  lcd.drawString("MAG X-Y", 20, 35);
+  lcd.drawString(String(head_dir), 30, 50);
+  lcd.drawString("Heading", 20, 65);
+  lcd.drawString(String(yaw), 30, 80);
+  lcd.drawString("sampleFreq", 250, 200);
+  lcd.drawString(String(1/deltat), 270, 215);
+
+  p_head_dir = head_dir;
+  p_yaw = yaw;
+  p_deltat = deltat;
+
+  lcd.setCursor(40, 230);
+  lcd.printf("BTN_A:CAL ");
+}
+
+void M5calibration(){
+  if(M5.BtnA.wasPressed())
+  {
+    lcd.clear();        // 黒で塗り潰し
+    lcd.setCursor(0, 0);
+    lcd.print("begin calibration in 3 seconds");
+    delay(3000);
+    lcd.setCursor(0, 10);
+    lcd.print("Flip + rotate core calibration");
+    bmm150.bmm150_calibrate(10000);
+    delay(100);
+
+    bmm150.Init();
+    bmm150.getMagnetOffset(&magoffsetX, &magoffsetY, &magoffsetZ);
+    bmm150.getMagnetScale(&magscaleX, &magscaleY, &magscaleZ);
+    lcd.clear();        // 黒で塗り潰し
+  }
+}
+
+void lt_event(Transmit_Packet* t_packet, int lt_value) {
+  if ((t_packet = (Transmit_Packet *)malloc(sizeof(Transmit_Packet))) == NULL) {
+    Serial.println(">malloc error with lt_event");
+    Serial.flush();
+  }
   M5.update();
   M5.IMU.getGyroData(&gyroX, &gyroY, &gyroZ);
   gyroX -= init_gyroX;
@@ -229,61 +342,287 @@ void loop()
   pitch *= RAD_TO_DEG;
   yaw *= RAD_TO_DEG;
   roll *= RAD_TO_DEG;
-
-  delay(1); 
-
-#ifdef MAG
-  Serial.printf(" %5.2f,  %5.2f,  %5.2f  \r\n", magnetX, magnetY, magnetZ);
-#endif
-#ifdef ANGLE
-  Serial.printf(" %5.2f  \r\n", head_dir);
-#endif
-
-  compassplot(yaw);
-  // for processing display
-  Serial.printf(" %5.2f,  %5.2f,  %5.2f  \r\n", roll, pitch, yaw); // to processing
-
-  lcd.fillTriangle(160,  29, 157,  20, 163,  20, TFT_WHITE);//  0
-  lcd.fillTriangle(251, 120, 260, 117, 260, 123, TFT_WHITE);// 90
-  lcd.fillTriangle(160, 211, 163, 220, 157, 220, TFT_WHITE);//180
-  lcd.fillTriangle( 69, 120,  60, 123,  60, 117, TFT_WHITE);//270
-
-  lcd.setTextColor(TFT_BLACK, TFT_BLACK);
-  lcd.drawString(String(p_head_dir), 30, 50);
-  lcd.drawString(String(p_yaw), 30, 80);
-  lcd.drawString(String(1/p_deltat), 270, 215);
-
-  lcd.setTextColor(TFT_WHITE, TFT_BLACK);
-  lcd.drawString("MAG X-Y", 20, 35);
-  lcd.drawString(String(head_dir), 30, 50);
-  lcd.drawString("Heading", 20, 65);
-  lcd.drawString(String(yaw), 30, 80);
-  lcd.drawString("sampleFreq", 250, 200);
-  lcd.drawString(String(1/deltat), 270, 215);
-
-  p_head_dir = head_dir;
-  p_yaw = yaw;
-  p_deltat = deltat;
-
-  lcd.setCursor(40, 230);
-  lcd.printf("BTN_A:CAL ");
+  bright_thresh = EEPROM.read(0);
+  t_packet->data[0] = accX;
+  t_packet->data[1] = accY;
+  t_packet->data[2] = accZ;
+  t_packet->data[3] = gyroX;
+  t_packet->data[4] = gyroY;
+  t_packet->data[5] = gyroZ;
+  t_packet->data[6] = yaw;
+  t_packet->data[7] = temp;
+  t_packet->data[8] = (lt_value >= bright_thresh)?1:0;
 }
 
-void M5calibration(){
-  if(M5.BtnA.wasPressed())
-  {
-    lcd.clear();        // 黒で塗り潰し
-    lcd.setCursor(0, 0);
-    lcd.print("begin calibration in 3 seconds");
-    delay(3000);
-    lcd.setCursor(0, 10);
-    lcd.print("Flip + rotate core calibration");
-    bmm150.bmm150_calibrate(10000);
-    delay(100);
-
-    bmm150.Init();
-    bmm150.getMagnetOffset(&magoffsetX, &magoffsetY, &magoffsetZ);
-    bmm150.getMagnetScale(&magscaleX, &magscaleY, &magscaleZ);
-    lcd.clear();        // 黒で塗り潰し
+void Serialsetup() {
+  Serial.begin(115200);
+  Serial.flush();
+  while (!Serial) {
   }
+  Serial.println("Transmission Start");
+  Serial.flush();
+  byte trush;
+  while (Serial.available() > 0) {
+    trush = Serial.read();
+  }
+}
+
+void LTsetup() {
+  pinMode(lt_pin, INPUT);
+  pinMode(line_tracer, INPUT);
+  if (digitalRead(lt_pin) == HIGH) {
+    Serial.println(">Line tracer Setup Start");
+    Serial.flush();
+    Serial.println(
+        ">pls connect check pin and GND to get the brightness on the line");
+    Serial.flush();
+    while (digitalRead(lt_pin) == HIGH) {
+      delay(100);
+    }
+    delay(1000);
+    int onLine = analogRead(line_tracer);
+    Serial.println(
+        ">OK. pls connect check pin and VCC to get the brightness on the load");
+    Serial.flush();
+    while (digitalRead(lt_pin) == LOW) {
+      delay(100);
+    }
+    delay(1000);
+    int onLoad = analogRead(line_tracer);
+    bright_thresh = (onLine + onLoad) / 2;
+    EEPROM.write(0, bright_thresh);
+    Serial.println(">Setup Complete");
+    Serial.flush();
+    Serial.print(">Brightness threshold : ");
+    Serial.flush();
+    Serial.println(bright_thresh);
+    Serial.flush();
+  }
+}
+
+void receivePacket() {
+  if (Serial.available() > 0) {
+    Receive_Packet *r_packet;
+    if ((r_packet = (Receive_Packet *)malloc(sizeof(Receive_Packet))) == NULL) {
+      Serial.println(">malloc error with receive_packet");
+      Serial.flush();
+      return;
+    }
+    byte receive_data[receive_data_size];
+    // noInterrupts();
+    byte received_data_size;
+    if (debug == 2) {
+      for (int i = 0; i < 24; i++) {
+        receive_data[i] = 0;
+      }
+    } else {
+      received_data_size =
+          byte(Serial.readBytes(receive_data, receive_data_size));
+      //      Serial.print(">Data");
+      //      for (int i=0; i<receive_data_size; i++){
+      //        Serial.print(":");
+      //        Serial.print(receive_data[i]);
+      //      }
+      //      Serial.println("");
+    }
+    //    Serial.println(">read");
+    //    Serial.flush();
+    if (received_data_size != byte(receive_data_size)) {
+      Serial.write(received_data_size);
+      Serial.flush();
+      if (debug) {
+        Serial.println(">Invalid data size");
+        Serial.flush();
+        //        Serial.print(">Datasize : ");
+        //        Serial.flush();
+        Serial.println(Serial.available());
+        Serial.flush();
+      }
+      // noInterrupts();
+      byte trush;
+      while (Serial.available() > 0) {
+        trush = Serial.read();
+        if (debug > 1) {
+          Serial.print(char(trush));
+          Serial.flush();
+        }
+      }
+      //      Serial.println(">Buffer cleared");
+      //      Serial.flush();
+      // interrupts();
+      free(r_packet);
+      return;
+    }
+    r_packet->signaltype = ((receive_data[0] << 8) + (receive_data[1]));
+    r_packet->unique_id = ((receive_data[2] << 24) + (receive_data[3] << 16) +
+                           (receive_data[4] << 8) + (receive_data[5]));
+    r_packet->rot_dir = receive_data[6];
+    r_packet->datatype = receive_data[7];
+    for (int i = 0; i < 4; i++) {
+      r_packet->data[i] = *(float *)(receive_data + 4 * i + 8);
+    }
+    if (r_packet->unique_id !=
+        current_unique_id) {  // if (r_packet->unique_id != 0x00000000) {
+      if (debug) {
+        Serial.print(">Invalid unique_id : ");
+        Serial.flush();
+        Serial.print(r_packet->unique_id);
+        Serial.flush();
+      }
+      free(r_packet);
+      return;
+    }
+    current_unique_id += 1;
+    if (debug) {
+      Serial.print(">unique_id : ");
+      Serial.flush();
+    }
+    Serial.write((byte)(r_packet->unique_id >> 24) & 0xFF);
+    Serial.flush();
+    Serial.write((byte)(r_packet->unique_id >> 16) & 0xFF);
+    Serial.flush();
+    Serial.write((byte)(r_packet->unique_id >> 8) & 0xFF);
+    Serial.flush();
+    Serial.write((byte)(r_packet->unique_id & 0xFF));
+    Serial.flush();
+    Serial.println("");
+    Serial.flush();
+    Receive_Packet *r_tail;
+    if (r_head == NULL) {
+      r_head = r_packet;
+    } else {
+      r_tail = r_head;
+      while (r_tail->next != NULL) {
+        r_tail = r_tail->next;
+      }
+      r_tail->next = r_packet;
+    }
+    if (debug) {
+      Serial.print(">re : ");
+      Serial.flush();
+      Serial.println(micros());
+      Serial.flush();
+    }
+    return;
+  } else if (Serial.available() == 0) {
+    // receivePacket();
+    return;
+  } else {
+    return;
+  }
+}
+
+void work() {
+  if (r_head == NULL) {
+    return;
+  } else {
+    Transmit_Packet *t_packet;
+    if ((t_packet = (Transmit_Packet *)malloc(sizeof(Transmit_Packet))) == NULL) {
+      Serial.println(">malloc error with work");
+      Serial.flush();
+      return;
+    }
+    if (debug) {
+      Serial.print(">ws : ");
+      Serial.flush();
+      Serial.println(micros());
+      Serial.flush();
+    }
+    t_packet->signaltype = r_head->signaltype;
+    t_packet->unique_id = r_head->unique_id;
+    int signaltype = r_head->signaltype;
+    int datatype = r_head->datatype;
+    int rot_dir = r_head->rot_dir;
+    current_signaltype = signaltype;
+    float bright_thresh;
+    float accX, accY, accZ;
+    float gyroX, gyroY, gyroZ;
+    float pitch, roll, yaw;
+    float temp;
+    float data[4];
+
+    for (int i = 0; i < 4; i++) {
+      t_packet->data[i] = r_head->data[i];
+      data[i] = r_head->data[i];
+    }
+    for (int i = 4; i < 9; i++) {
+      t_packet->data[i] = 0;
+    }
+    Receive_Packet *buf = r_head->next;
+    free(r_head);
+    r_head = buf;
+
+    switch (signaltype) {
+      case 10:
+      case 20:
+      case 30:
+      case 60:
+      case 70:
+        serialTransmit(t_packet);
+        break;
+    }
+    switch (signaltype) {
+      case 40:
+        M5.IMU.getTempData(&temp);  // Stores the inertial sensor temperature to temp.
+        if (temp >= -10 & temp < 40) {
+          t_packet->data[0] = get_dist(temp);
+        } else if (t_packet->data[0] >= -10 & t_packet->data[0] < 40) {
+          t_packet->data[0] = get_dist(t_packet->data[0]);
+        } else {
+          t_packet->data[0] = get_dist(20);
+        }
+        break;
+      case 50:
+        bright_thresh = EEPROM.read(0);
+        t_packet->data[0] = (digitalRead(line_tracer) >= bright_thresh) ? 1 : 0;
+        break;
+      case 80:
+        lt_event(t_packet,analogRead(line_tracer));
+        t_packet->data[0] = accX;
+        t_packet->data[1] = accY;
+        t_packet->data[2] = accZ;
+        t_packet->data[3] = gyroX;
+        t_packet->data[4] = gyroY;
+        t_packet->data[5] = gyroZ;
+        t_packet->data[6] = yaw;
+        t_packet->data[7] = temp;
+        t_packet->data[8] = (analogRead(line_tracer) >= bright_thresh) ? 1.0 : 0.0;
+        break;
+    }
+    if (debug) {
+      Serial.print(">we : ");
+      Serial.flush();
+      Serial.println(micros());
+      Serial.flush();
+    }
+    serialTransmit(t_packet);
+  }
+}
+
+void serialTransmit(Transmit_Packet *t_packet) {
+  if (t_packet != NULL) {
+    if (t_packet->signaltype == 80 | t_packet->signaltype == 90) {
+      Serial.printf(">#{\"SignalType\" : %d, \"UniqueID\" : %d, \"AccelX\" : %.2f, \"AccelY\" : %.2f, \"AccelZ\" : %.2f, \
+        \"GyroX\" : %.2f, \"GyroY\" : %.2f, \"GyroZ\" : %.2f, \"Direction\" : %.2f, \"Temperature\" : %.2f, \"LineTracer\" : %.2f}\n",
+        t_packet->signaltype, t_packet->unique_id, t_packet->data[0],
+        t_packet->data[1], t_packet->data[2], t_packet->data[3],
+        t_packet->data[4], t_packet->data[5], t_packet->data[6],
+        t_packet->data[7], t_packet->data[8]);
+    } else {
+      Serial.printf(">#{\"SignalType\" : %d, \"UniqueID\" : %d, \"Data1\" : %.2f, \"Data2\" : %.2f, \"Data3\" : %.2f, \
+        \"Data4\" : %.2f, \"Data5\" : %.2f, \"Data6\" : %.2f, \"Data7\" : %.2f, \"Data8\" : %.2f, \"Data9\" : %.2f}\n",
+        t_packet->signaltype, t_packet->unique_id, t_packet->data[0],
+        t_packet->data[1], t_packet->data[2], t_packet->data[3],
+        t_packet->data[4], t_packet->data[5], t_packet->data[6],
+        t_packet->data[7], t_packet->data[8]);
+    }
+    free(t_packet);
+  }
+}
+
+float get_dist(float temperature) {
+  float velocity = 331.5 + 0.61 * (float)temperature;             // m/s
+  int pulse_time = pulseIn(echo_pin, HIGH, 20000);                // us
+  float distance = velocity * 1000 * (pulse_time / 2) / 1000000;  // mm
+  return distance;
 }

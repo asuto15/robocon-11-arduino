@@ -76,7 +76,6 @@ int bright_thresh = EEPROM.read(0);
 
 void setup() {
   enableCore1WDT();
-  Serial.begin(115200);
   M5.begin(true, false, true,
            false);             // Init M5Core(Initialize LCD, serial port).
   M5.Power.begin();            // Init Power module.
@@ -349,8 +348,6 @@ void lt_event(Transmit_Packet* t_packet, int lt_value) {
   M5.IMU.getAccelData(&accX, &accY, &accZ);  // Stores the triaxial accelerometer.
   M5.IMU.getAhrsData(&pitch, &roll, &yaw);  // Stores the inertial sensor attitude.
   M5.IMU.getTempData(&temp);
-  bmm150_read_mag_data(&dev);
-
   bmm150.getMagnetData(&magnetX, &magnetY, &magnetZ);
   gyroX -= init_gyroX;
   gyroY -= init_gyroY;
@@ -398,12 +395,8 @@ void lt_event(Transmit_Packet* t_packet, int lt_value) {
 }
 
 void Serialsetup() {
-#if defined(ARDUINO_MYBUILD)
-  Serial.begin(9600);
-#endif
-#if defined(M5STACK_MYBUILD)
   Serial.begin(115200);
-#endif
+  Serial.flush();
   while (!Serial) {
   }
   Serial.println("Transmission Start");
@@ -648,53 +641,7 @@ void work() {
         t_packet->data[0] = (digitalRead(line_tracer) >= bright_thresh) ? 1 : 0;
         break;
       case 80:
-        M5.IMU.getGyroData(&gyroX, &gyroY, &gyroZ);
-        M5.IMU.getAccelData(&accX, &accY, &accZ);  // Stores the triaxial accelerometer.
-        M5.IMU.getAhrsData(&pitch, &roll, &yaw);  // Stores the inertial sensor attitude.
-        M5.IMU.getTempData(&temp);
-        bmm150.getMagnetData(&magnetX, &magnetY, &magnetZ);
-        gyroX -= init_gyroX;
-        gyroY -= init_gyroY;
-        gyroZ -= init_gyroZ;
-        magnetX = (magnetX - magoffsetX) * magscaleX;
-        magnetY = (magnetY - magoffsetY) * magscaleY;
-        magnetZ = (magnetZ - magoffsetZ) * magscaleZ;
-        float head_dir = atan2(magnetX, magnetY);
-        if (head_dir < 0) head_dir += 2 * PI;
-        if (head_dir > 2 * PI) head_dir -= 2 * PI;
-        head_dir *= RAD_TO_DEG;
-        Now_w = micros();
-        deltat_w = ((Now_w - lastUpdate_w) / 1000000.0f);  // 0.09
-        lastUpdate_w = Now_w;
-#ifdef MADGWICK
-        MadgwickQuaternionUpdate(accX, accY, accZ, gyroX * DEG_TO_RAD,
-                                 gyroY * DEG_TO_RAD, gyroZ * DEG_TO_RAD,
-                                 -magnetX, magnetY, -magnetZ, deltat_w);
-#endif
-#ifdef MAHONY
-        MahonyQuaternionUpdate(accX, accY, accZ, gyroX * DEG_TO_RAD,
-                               gyroY * DEG_TO_RAD, gyroZ * DEG_TO_RAD, -magnetX,
-                               magnetY, -magnetZ, deltat_w);
-        // delay(10); // adjust sampleFreq = 50Hz
-#endif
-        yaw = atan2(
-            2.0f * (*(getQ() + 1) * *(getQ() + 2) + *getQ() * *(getQ() + 3)),
-            *getQ() * *getQ() + *(getQ() + 1) * *(getQ() + 1) -
-                *(getQ() + 2) * *(getQ() + 2) - *(getQ() + 3) * *(getQ() + 3));
-        pitch = -asin(
-            2.0f * (*(getQ() + 1) * *(getQ() + 3) - *getQ() * *(getQ() + 2)));
-        roll = atan2(
-            2.0f * (*getQ() * *(getQ() + 1) + *(getQ() + 2) * *(getQ() + 3)),
-            *getQ() * *getQ() - *(getQ() + 1) * *(getQ() + 1) -
-                *(getQ() + 2) * *(getQ() + 2) + *(getQ() + 3) * *(getQ() + 3));
-        yaw = -0.5 * M_PI - yaw;
-        if (yaw < 0) yaw += 2 * M_PI;
-        if (yaw > 2 * M_PI) yaw -= 2 * M_PI;
-        pitch *= RAD_TO_DEG;
-        yaw *= RAD_TO_DEG;
-        roll *= RAD_TO_DEG;
-        bright_thresh = EEPROM.read(0);
-        
+        lt_event(t_packet,lt_value)
         t_packet->data[0] = accX;
         t_packet->data[1] = accY;
         t_packet->data[2] = accZ;
